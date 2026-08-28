@@ -256,3 +256,13 @@ class ViabilityResult(BaseModel):
     est_cost_bps: int  # cost as bps of debt protected
     viable: bool
     reason: str | None = None
+
+
+class PositionSnapshot(BaseModel):
+    """A single monitor poll (FR-1): account data plus the classified lifecycle state."""
+
+    borrower: str
+    account: UserAccountData
+    state: PositionState
+    hf: float
+    hf_trigger_bps: int

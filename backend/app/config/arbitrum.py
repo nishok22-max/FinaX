@@ -74,6 +74,9 @@ FLASH_PREMIUM_BPS: Final = 5  # Aave V3 flashLoanSimple premium = 0.05%
 # Matches the 1% used on-chain in SizingParity.t.sol (`onePlusF = 1.01e18`) for numeric parity.
 DEFAULT_BUNDLED_COST_BPS: Final = 100  # 1.00%
 HF_LIQUIDATION_BOUNDARY: Final = 1.0  # HF = 1.0 is the liquidation boundary
+# Nominal gas cost for the assessment's viability gate, in USD base currency (1e8).
+# Arbitrum L2 gas is small; the Phase 5 submitter replaces this with a live gas-oracle estimate.
+DEFAULT_GAS_COST_BASE: Final = 50_000_000  # ~$0.50
 
 
 def fee_tier_for(token_in: str, token_out: str) -> int:
