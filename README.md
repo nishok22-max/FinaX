@@ -4,15 +4,18 @@ Autonomous, atomic liquidation protection for Aave V3 positions on **Arbitrum On
 Solidity vault + Python/FastAPI keeper backend. See [`PRD.md`](PRD.md),
 [`SYSTEM_ARCHITECTURE.md`](SYSTEM_ARCHITECTURE.md), and [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
 
-This repo currently implements **Sprint 0 + Phases 0–4** (contracts + fork tests, the backend
-core, and the off-chain decision pipeline: monitor, risk, sizing, selection, viability). Phases
-5–6 (FastAPI worker with simulation/submission, and the end-to-end demo) are next.
+This repo currently implements **Sprint 0 + Phases 0–5** (contracts + fork tests, the backend
+core, the off-chain decision pipeline, and the FastAPI service with simulation, submission, the
+autonomous worker, in-flight lock, and circuit breaker). Phase 6 (the packaged end-to-end demo) is
+next.
 
 ## Layout
 
 ```
 contracts/   Foundry project — LiquidationShieldVault.sol, interfaces, libraries, fork tests
-backend/     Python/FastAPI — /health, chain clients (Aave/Uniswap/oracle), and the decision pipeline
+backend/     Python/FastAPI — control API + worker over the shared ProtectionService:
+             app/chain (Aave/Uniswap/oracle/ERC20), app/core (pipeline, simulator, submitter,
+             state, in-flight, breaker), app/api (routes), app/scheduler.py (worker)
 ```
 
 ## Prerequisites
@@ -69,11 +72,16 @@ Run the backend tests and quality gates:
 ruff check app tests && mypy app && pytest -q
 ```
 
-> Unit tests always run. Fork-integration tests need `ARBITRUM_RPC_URL`; the full end-to-end
-> pipeline test (`tests/test_pipeline_position_fork.py`) also needs `anvil` (Foundry) on PATH —
-> it forks Arbitrum from `https://arb1.arbitrum.io/rpc` (override with `ANVIL_FORK_URL`), builds
-> a real WETH/USDC position, and asserts the composed pipeline returns a correct, viable,
-> sized `AssessmentResponse`. All tiers skip cleanly when their prerequisites are absent.
+> Unit tests always run. Fork-integration tests need `ARBITRUM_RPC_URL`; the end-to-end tests
+> (`tests/test_pipeline_position_fork.py`, `tests/test_protect_e2e_fork.py`) also need `anvil`
+> (Foundry) on PATH — they fork Arbitrum from `https://arb1.arbitrum.io/rpc` (override with
+> `ANVIL_FORK_URL`), build a real WETH/USDC position, deploy the vault, and drive the pipeline /
+> `POST /protect` path. All tiers skip cleanly when prerequisites are absent.
+>
+> **anvil note:** the `protect` e2e proves the backend end-to-end (viable assessment + on-chain
+> validation acceptance) but skips the final flash-loan execution: Aave V3.3's flash loan needs
+> Cancun transient storage, and anvil 1.8.0 cannot fork Arbitrum under Cancun ("Excess blob gas
+> not set"). The atomic rescue itself is covered by the Foundry fork suite (13/13).
 
 > The Phase 3 chain clients (`app/chain/`) read real Aave HF, reserve config, Aave-oracle
 > prices, Chainlink freshness, and live Uniswap quotes through typed `web3.py` wrappers with
@@ -94,7 +102,8 @@ ruff check app tests && mypy app && pytest -q
 | Backend `/health` scaffold | ✅ |
 | Backend core — config/addresses/ABIs, typed Aave/Uniswap/oracle/ERC20 clients, RPC failover, Pydantic models (Phase 3) | ✅ |
 | Decision pipeline — monitor (FR-1), risk/dynamic `HF_target` (FR-2/10), Δd* sizing (FR-3), collateral selection (FR-5), viability gate (FR-11), composed assessment (Phase 4) | ✅ |
-| FastAPI worker + simulation/submission · e2e demo (Phases 5–6) | ⏳ next |
+| FastAPI service — control API (`/positions`, `/config`, `/metrics`, `/breaker/reset`), simulation + Δd* bump (FR-8), keeper submission (borrower key never on backend), in-flight lock (FR-16), circuit breaker (FR-17), autonomous worker (FR-12) (Phase 5) | ✅ |
+| Packaged end-to-end demo (Phase 6) | ⏳ next |
 
 ## Security notes
 

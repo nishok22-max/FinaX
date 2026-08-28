@@ -41,9 +41,13 @@ class Settings(BaseSettings):
     )
     oracle_max_staleness_seconds: int = Field(default=3600, alias="ORACLE_MAX_STALENESS_SECONDS")
 
-    # --- Signer / breaker -------------------------------------------------
+    # --- Signer / breaker / worker ---------------------------------------
     keeper_private_key: str = Field(default="", alias="KEEPER_PRIVATE_KEY")
     breaker_max_consecutive_failures: int = Field(default=3, alias="BREAKER_MAX_CONSECUTIVE_FAILURES")
+    inflight_cooldown_seconds: int = Field(default=30, alias="INFLIGHT_COOLDOWN_SECONDS")
+    max_simulation_bumps: int = Field(default=3, alias="MAX_SIMULATION_BUMPS")
+    autonomous_enabled: bool = Field(default=True, alias="AUTONOMOUS_ENABLED")
+    worker_enabled: bool = Field(default=True, alias="WORKER_ENABLED")
 
 
 settings = Settings()

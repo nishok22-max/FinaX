@@ -9,6 +9,12 @@ Two tiers:
 from __future__ import annotations
 
 import os
+import shutil
+import socket
+import subprocess
+import time
+from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 
@@ -21,6 +27,81 @@ def _web3_importable() -> bool:
     except Exception:  # noqa: BLE001 - native/DLL or install issues -> skip fork tests
         return False
     return True
+
+
+def anvil_bin() -> str | None:
+    found = shutil.which("anvil")
+    if found:
+        return found
+    candidate = Path.home() / ".foundry" / "bin" / ("anvil.exe" if os.name == "nt" else "anvil")
+    return str(candidate) if candidate.exists() else None
+
+
+def _free_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return int(s.getsockname()[1])
+
+
+def fork_source() -> str:
+    """Endpoint anvil forks FROM — must answer anvil's network-family probe AND serve pinned-block
+    state token-free. The official Arbitrum endpoint does both; override with ANVIL_FORK_URL."""
+    return os.environ.get("ANVIL_FORK_URL") or "https://arb1.arbitrum.io/rpc"
+
+
+@pytest.fixture(scope="module")
+def anvil_url() -> Iterator[str]:
+    """A running ``anvil`` Arbitrum fork (shanghai EVM, pinned recent block). Skips if unavailable."""
+    if not _web3_importable():
+        pytest.skip("web3 not importable")
+    anvil = anvil_bin()
+    if not anvil:
+        pytest.skip("anvil not found (~/.foundry/bin)")
+
+    import httpx
+
+    src = fork_source()
+    try:
+        resp = httpx.post(src, json={"jsonrpc": "2.0", "id": 1, "method": "eth_blockNumber",
+                                     "params": []}, timeout=10)
+        fork_block = int(resp.json()["result"], 16) - 3
+    except Exception as exc:  # noqa: BLE001
+        pytest.skip(f"could not read latest block from fork source: {exc}")
+
+    port = _free_port()
+    log = open(Path(os.environ.get("TEMP", ".")) / f"anvil_{port}.log", "w+")  # noqa: SIM115
+    # --hardfork shanghai avoids anvil's "Excess blob gas not set" on an Arbitrum fork.
+    proc = subprocess.Popen(
+        [anvil, "--fork-url", src, "--fork-block-number", str(fork_block),
+         "--port", str(port), "--hardfork", "shanghai"],
+        stdout=log, stderr=subprocess.STDOUT,
+    )
+    url = f"http://127.0.0.1:{port}"
+    try:
+        deadline = time.time() + 90
+        ready = False
+        while time.time() < deadline:
+            if proc.poll() is not None:
+                break
+            try:
+                r = httpx.post(url, json={"jsonrpc": "2.0", "id": 1, "method": "eth_chainId",
+                                          "params": []}, timeout=2)
+                if r.status_code == 200 and "result" in r.json():
+                    ready = True
+                    break
+            except Exception:  # noqa: BLE001
+                time.sleep(0.5)
+        if not ready:
+            log.seek(0)
+            pytest.skip(f"anvil fork not ready; log tail:\n{log.read()[-800:]}")
+        yield url
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except Exception:  # noqa: BLE001
+            proc.kill()
+        log.close()
 
 
 @pytest.fixture(scope="session")
