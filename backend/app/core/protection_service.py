@@ -267,6 +267,15 @@ class ProtectionService:
         return self._inflight
 
     @property
+    def monitor(self) -> PositionMonitor:
+        """The monitor whose volatility window ``tick`` fills — the pipeline holds its own.
+
+        Read-only accessor for callers that need the σ actually accumulated by the polling loop
+        (the risk signal is computed per assessment and otherwise discarded).
+        """
+        return self._monitor
+
+    @property
     def simulator(self) -> Simulator | None:
         return self._simulator
 

@@ -10,59 +10,49 @@
 <meta name="theme-color" content="#0B0D0F" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="finax.css" />
 </head>
 <body>
 
-<a href="#command-center" class="skip-link">Skip to content</a>
+<a href="#overview" class="skip-link">Skip to content</a>
 
 <!-- ============================== NAVBAR ============================== -->
 <header class="navbar">
   <div class="navbar-inner">
-    <a class="brand" href="#command-center" aria-label="FinaX home">
+    <a class="brand" href="#overview" aria-label="FinaX home">
       <span class="brand-mark" aria-hidden="true">FX</span>
       <span class="brand-text">
         <span class="brand-name">FinaX</span>
-        <span class="brand-desc">AUTONOMOUS DEFI RISK PROTECTION</span>
+        <span class="brand-desc">Autonomous DeFi risk protection</span>
       </span>
     </a>
 
     <nav class="navlinks" aria-label="Primary">
-      <a href="#command-center" data-nav="command-center">Command Center</a>
+      <a href="#overview" data-nav="overview">Overview</a>
       <a href="#position" data-nav="position">Position</a>
-      <a href="#risk" data-nav="risk">Risk</a>
-      <a href="#protection" data-nav="protection">Protection</a>
       <a href="#execution" data-nav="execution">Execution</a>
-      <a href="#security" data-nav="security">Security</a>
+      <a href="#agent" data-nav="agent">Agent</a>
       <a href="#system" data-nav="system">System</a>
-      <a href="#assistant" data-nav="assistant">Assistant</a>
     </nav>
 
     <div class="navbar-right">
-      <span class="chip">ARBITRUM ONE</span>
+      <span class="chip">Arbitrum One</span>
       <span class="chip chip-status" id="chip-system-status">
         <span class="status-dot" id="dot-system-status"></span>
-        <span id="txt-system-status">CONNECTING</span>
+        <span id="txt-system-status">Connecting</span>
       </span>
-      <button class="btn btn-primary" onclick="go('protection')">
-        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 3 6v6c0 5 3.8 8.4 9 10 5.2-1.6 9-5 9-10V6l-9-4Z"/></svg>
-        VIEW PROTECTION
-      </button>
       <button class="btn-icon" id="btn-menu" aria-label="Toggle navigation" aria-expanded="false">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
       </button>
     </div>
   </div>
   <nav class="navlinks-mobile" id="navlinks-mobile" aria-label="Primary mobile">
-    <a href="#command-center" data-nav="command-center">Command Center</a>
+    <a href="#overview" data-nav="overview">Overview</a>
     <a href="#position" data-nav="position">Position</a>
-    <a href="#risk" data-nav="risk">Risk</a>
-    <a href="#protection" data-nav="protection">Protection</a>
     <a href="#execution" data-nav="execution">Execution</a>
-    <a href="#security" data-nav="security">Security</a>
+    <a href="#agent" data-nav="agent">Agent</a>
     <a href="#system" data-nav="system">System</a>
-    <a href="#assistant" data-nav="assistant">Assistant</a>
   </nav>
 </header>
 
@@ -70,10 +60,10 @@
 <div class="breaker-banner" id="breaker-banner" role="alert" style="display:none;">
   <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.6 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.6a2 2 0 0 0-3.4 0Z"/></svg>
   <div>
-    <strong>AUTONOMOUS PROTECTION PAUSED</strong>
+    <strong>Autonomous protection paused</strong>
     <span id="breaker-reason-text">Reason: —</span>
   </div>
-  <button class="btn btn-ghost btn-sm" onclick="go('system')">VIEW SYSTEM STATUS</button>
+  <button class="btn btn-ghost btn-sm" onclick="go('system')">View system status</button>
 </div>
 
 <main id="main">
@@ -81,75 +71,55 @@
   <!-- Wallet bar: shared across sections -->
   <section class="walletbar">
     <div class="walletbar-inner">
-      <label for="borrower-input" class="walletbar-label">BORROWER ADDRESS</label>
+      <label for="borrower-input" class="walletbar-label">Borrower</label>
       <input id="borrower-input" class="input mono" type="text" spellcheck="false"
              value="0x70997970C51812dc3A010C7d01b50e0d17dc79C8" placeholder="0x…" />
-      <button class="btn btn-secondary" id="btn-load" onclick="loadPosition()">LOAD POSITION</button>
+      <button class="btn btn-primary" id="btn-load" onclick="loadPosition()">Load position</button>
       <span class="walletbar-hint" id="walletbar-hint"></span>
     </div>
   </section>
 
-  <!-- ============================ 1. COMMAND CENTER ============================ -->
-  <section class="view" id="view-command-center" data-view="command-center">
+  <!-- ============================ 1. OVERVIEW ============================ -->
+  <section class="view" id="view-overview" data-view="overview">
     <div class="container">
       <div class="view-head">
-        <h1>Command Center</h1>
-        <p>System-wide state of the monitored position and the autonomous keeper.</p>
+        <h1>Overview</h1>
+        <p>State of the monitored position and the autonomous keeper.</p>
       </div>
 
       <div class="grid-12 metrics-row">
         <div class="metric-card col-3">
-          <div class="metric-label">HEALTH FACTOR</div>
+          <div class="metric-label">Health factor</div>
           <div class="metric-value mono" id="cc-hf">—</div>
           <div class="metric-sub" id="cc-hf-sub">Awaiting position load</div>
         </div>
         <div class="metric-card col-3">
-          <div class="metric-label">CURRENT RISK</div>
+          <div class="metric-label">Current risk</div>
           <div class="metric-value" id="cc-risk">—</div>
           <div class="metric-sub" id="cc-risk-sub">Derived from position state</div>
         </div>
         <div class="metric-card col-3">
-          <div class="metric-label">COLLATERAL</div>
+          <div class="metric-label">Collateral</div>
           <div class="metric-value mono" id="cc-collateral">—</div>
           <div class="metric-sub">USD, oracle-priced</div>
         </div>
         <div class="metric-card col-3">
-          <div class="metric-label">DEBT</div>
+          <div class="metric-label">Debt</div>
           <div class="metric-value mono" id="cc-debt">—</div>
           <div class="metric-sub">USD, oracle-priced</div>
-        </div>
-        <div class="metric-card col-3">
-          <div class="metric-label">TARGET HF</div>
-          <div class="metric-value mono" id="cc-target">—</div>
-          <div class="metric-sub">From last assessment</div>
-        </div>
-        <div class="metric-card col-3">
-          <div class="metric-label">SYSTEM STATE</div>
-          <div class="metric-value" id="cc-state">—</div>
-          <div class="metric-sub">Backend position state</div>
-        </div>
-        <div class="metric-card col-3">
-          <div class="metric-label">RPC</div>
-          <div class="metric-value" id="cc-rpc">—</div>
-          <div class="metric-sub mono" id="cc-block">block —</div>
-        </div>
-        <div class="metric-card col-3">
-          <div class="metric-label">BREAKER</div>
-          <div class="metric-value" id="cc-breaker">—</div>
-          <div class="metric-sub" id="cc-breaker-sub">0 / 3 failures</div>
         </div>
       </div>
 
       <div class="panel">
         <div class="panel-head">
-          <h2>Health Factor</h2>
-          <span class="panel-tag">LIVE FROM BACKEND</span>
+          <h2>Health factor</h2>
+          <span class="panel-tag">Live from backend</span>
         </div>
         <div class="panel-body">
           <div class="hf-chart" id="hf-chart">
             <div class="hf-row"><span class="hf-row-label">1.50</span><div class="hf-row-track"></div></div>
-            <div class="hf-row"><span class="hf-row-label" id="hfc-target-label">TARGET</span><div class="hf-row-track"><div class="hf-line hf-line-target" id="hfc-target-line"></div></div></div>
-            <div class="hf-row"><span class="hf-row-label" id="hfc-current-label">CURRENT</span><div class="hf-row-track"><div class="hf-line hf-line-current" id="hfc-current-line"></div></div></div>
+            <div class="hf-row"><span class="hf-row-label" id="hfc-target-label">Target</span><div class="hf-row-track"><div class="hf-line hf-line-target" id="hfc-target-line"></div></div></div>
+            <div class="hf-row"><span class="hf-row-label" id="hfc-current-label">Current</span><div class="hf-row-track"><div class="hf-line hf-line-current" id="hfc-current-line"></div></div></div>
             <div class="hf-row"><span class="hf-row-label">1.15</span><div class="hf-row-track"><div class="hf-line hf-line-trigger"></div></div></div>
             <div class="hf-row"><span class="hf-row-label">1.00</span><div class="hf-row-track"><div class="hf-line hf-line-liq"></div></div></div>
           </div>
@@ -162,62 +132,72 @@
         </div>
       </div>
 
-      <div class="panel">
-        <div class="panel-head">
-          <h2>Demo / Simulation</h2>
-          <span class="panel-tag panel-tag-warn">DEMO / SIMULATION — NOT LIVE DATA</span>
+      <div class="grid-12 metrics-row">
+        <div class="metric-card col-3">
+          <div class="metric-label">System state</div>
+          <div class="metric-value metric-value-sm" id="cc-state">—</div>
+          <div class="metric-sub">Backend position state</div>
         </div>
-        <div class="panel-body">
-          <p class="muted">These controls illustrate the pipeline. "Run Protection Demo" calls the real backend against the wallet above; "Simulate Market Crash" is a fictional, clearly-labeled price animation and never overwrites live metrics.</p>
-          <div class="btn-row">
-            <button class="btn btn-secondary" onclick="simulateMarketCrash()">SIMULATE MARKET CRASH</button>
-            <button class="btn btn-primary" onclick="runFullCheck()">RUN PROTECTION DEMO</button>
-          </div>
-          <div class="crash-sim" id="crash-sim" style="display:none;">
-            <div class="crash-row"><span>WETH (fictional)</span><span class="mono" id="crash-price">$3,000</span></div>
-            <div class="crash-row"><span>Health Factor (fictional)</span><span class="mono" id="crash-hf">1.48</span></div>
-            <div class="crash-status" id="crash-status">—</div>
-          </div>
+        <div class="metric-card col-3">
+          <div class="metric-label">Target HF</div>
+          <div class="metric-value metric-value-sm mono" id="cc-target">—</div>
+          <div class="metric-sub">From last assessment</div>
+        </div>
+        <div class="metric-card col-3">
+          <div class="metric-label">RPC</div>
+          <div class="metric-value metric-value-sm" id="cc-rpc">—</div>
+          <div class="metric-sub mono" id="cc-block">block —</div>
+        </div>
+        <div class="metric-card col-3">
+          <div class="metric-label">Breaker</div>
+          <div class="metric-value metric-value-sm" id="cc-breaker">—</div>
+          <div class="metric-sub" id="cc-breaker-sub">0 / 3 failures</div>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- ============================ 2. POSITION ============================ -->
+  <!-- ====== 2. POSITION (account + risk + decision + reasoning) ====== -->
   <section class="view" id="view-position" data-view="position">
     <div class="container">
       <div class="view-head">
         <h1>Position</h1>
-        <p>Raw account state returned by <code class="mono">GET /positions/{borrower}</code>.</p>
+        <p>Account state, the risk verdict, and the intervention the pipeline would take.</p>
       </div>
-      <div class="panel">
-        <div class="panel-body">
-          <table class="data-table" id="position-table">
-            <tbody>
-              <tr><th>Borrower</th><td class="mono" id="pt-borrower">—</td></tr>
-              <tr><th>State</th><td id="pt-state">—</td></tr>
-              <tr><th>Health Factor</th><td class="mono" id="pt-hf">—</td></tr>
-              <tr><th>Collateral (USD)</th><td class="mono" id="pt-collateral">—</td></tr>
-              <tr><th>Debt (USD)</th><td class="mono" id="pt-debt">—</td></tr>
-              <tr><th>Has Debt</th><td class="mono" id="pt-hasdebt">—</td></tr>
-              <tr><th>Registered With Keeper</th><td class="mono" id="pt-registered">—</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  </section>
 
-  <!-- ============================ 3. RISK ============================ -->
-  <section class="view" id="view-risk" data-view="risk">
-    <div class="container">
-      <div class="view-head">
-        <h1>Risk Assessment</h1>
-        <p>The backend's current risk verdict for the loaded position.</p>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btn-assess" onclick="runAssessmentOnly()">Run dry-run assessment</button>
+        <button class="btn btn-secondary" onclick="runFullCheck()">Execute protection</button>
       </div>
+
       <div class="grid-12">
+        <!-- Account -->
         <div class="panel col-6">
-          <div class="panel-head"><h2>Risk Level</h2></div>
+          <div class="panel-head">
+            <h2>Account</h2>
+            <span class="panel-tag">GET /positions/{borrower}</span>
+          </div>
+          <div class="panel-body">
+            <table class="data-table" id="position-table">
+              <tbody>
+                <tr><th>Borrower</th><td class="mono" id="pt-borrower">—</td></tr>
+                <tr><th>State</th><td id="pt-state">—</td></tr>
+                <tr><th>Health factor</th><td class="mono" id="pt-hf">—</td></tr>
+                <tr><th>Collateral (USD)</th><td class="mono" id="pt-collateral">—</td></tr>
+                <tr><th>Debt (USD)</th><td class="mono" id="pt-debt">—</td></tr>
+                <tr><th>Has debt</th><td class="mono" id="pt-hasdebt">—</td></tr>
+                <tr><th>Registered</th><td class="mono" id="pt-registered">—</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Risk -->
+        <div class="panel col-6">
+          <div class="panel-head">
+            <h2>Risk</h2>
+            <span class="panel-tag">Backend classification</span>
+          </div>
           <div class="panel-body">
             <div class="risk-badge" id="risk-badge">—</div>
             <table class="data-table">
@@ -228,180 +208,260 @@
                 <tr><th>State</th><td id="rk-state">—</td></tr>
               </tbody>
             </table>
-          </div>
-        </div>
-        <div class="panel col-6">
-          <div class="panel-head"><h2>Explanation</h2></div>
-          <div class="panel-body">
             <p class="explain-text" id="risk-explain">Load a position to see the backend's risk classification.</p>
           </div>
         </div>
       </div>
-    </div>
-  </section>
 
-  <!-- ============================ 4. PROTECTION ============================ -->
-  <section class="view" id="view-protection" data-view="protection">
-    <div class="container">
-      <div class="view-head">
-        <h1>Protection</h1>
-        <p>Runs <code class="mono">POST /positions/{borrower}/assessment</code> — the real risk → sizing → selection → viability pipeline.</p>
-      </div>
-
-      <div class="btn-row">
-        <button class="btn btn-secondary" id="btn-assess" onclick="runAssessmentOnly()">RUN DRY-RUN ASSESSMENT</button>
-      </div>
-
+      <!-- Decision -->
       <div class="panel">
         <div class="panel-head">
-          <h2>Autonomous Decision</h2>
-          <span class="panel-tag" id="decision-tag">NO ASSESSMENT YET</span>
+          <h2>Autonomous decision</h2>
+          <span class="panel-tag" id="decision-tag">No assessment yet</span>
         </div>
         <div class="panel-body">
           <table class="data-table">
             <tbody>
-              <tr><th>Risk Level</th><td id="ad-risk">—</td></tr>
+              <tr><th>Risk level</th><td id="ad-risk">—</td></tr>
               <tr><th>Target HF</th><td class="mono" id="ad-target">—</td></tr>
-              <tr><th>Optimal Repayment</th><td class="mono" id="ad-repay">—</td></tr>
-              <tr><th>Selected Collateral</th><td class="mono" id="ad-collateral">—</td></tr>
-              <tr><th>Estimated Cost</th><td class="mono" id="ad-cost">—</td></tr>
-              <tr><th>Economic Viability</th><td id="ad-viable">—</td></tr>
+              <tr><th>Optimal repayment</th><td class="mono" id="ad-repay">—</td></tr>
+              <tr><th>Selected collateral</th><td class="mono" id="ad-collateral">—</td></tr>
+              <tr><th>Estimated cost</th><td class="mono" id="ad-cost">—</td></tr>
+              <tr><th>Economic viability</th><td id="ad-viable">—</td></tr>
             </tbody>
           </table>
+          <p class="explain-text" id="protection-explain">Run an assessment to see the backend's reasoning here.</p>
         </div>
       </div>
 
+      <!-- Forecast / explanation -->
       <div class="panel">
-        <div class="panel-head"><h2>Why This Action?</h2></div>
+        <div class="panel-head">
+          <h2>Forecast</h2>
+          <span class="panel-tag">Explainability — backend is authoritative</span>
+        </div>
         <div class="panel-body">
-          <p class="explain-text" id="protection-explain">Run an assessment to see the backend's reasoning here.</p>
+          <div class="assistant-text" id="assistant-text">Load a position and run an assessment to get an explanation.</div>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- ============================ 5. EXECUTION ============================ -->
+  <!-- ============================ 3. EXECUTION ============================ -->
   <section class="view" id="view-execution" data-view="execution">
     <div class="container">
       <div class="view-head">
         <h1>Execution</h1>
-        <p>Runs <code class="mono">POST /positions/{borrower}/protect</code> — assess → simulate → submit, exactly as the autonomous worker does it.</p>
+        <p>Runs <code class="mono">POST /positions/{borrower}/protect</code> — assess, simulate, submit, exactly as the autonomous worker does.</p>
       </div>
 
       <div class="btn-row">
-        <button class="btn btn-primary" id="btn-execute" onclick="runFullCheck()">EXECUTE PROTECTION</button>
+        <button class="btn btn-primary" id="btn-execute" onclick="runFullCheck()">Execute protection</button>
       </div>
 
       <div class="panel">
-        <div class="panel-head"><h2>Protection Flow</h2></div>
+        <div class="panel-head"><h2>Protection flow</h2></div>
         <div class="panel-body">
           <ol class="flow-steps" id="flow-steps">
-            <li class="flow-step" data-step="1"><span class="flow-num">01</span><span class="flow-name">MONITOR</span><span class="flow-desc">Read live Aave account data</span><span class="flow-status">PENDING</span></li>
-            <li class="flow-step" data-step="2"><span class="flow-num">02</span><span class="flow-name">PREDICT</span><span class="flow-desc">Dynamic HF target from volatility</span><span class="flow-status">PENDING</span></li>
-            <li class="flow-step" data-step="3"><span class="flow-num">03</span><span class="flow-name">SIZE</span><span class="flow-desc">Minimum Δd* repayment</span><span class="flow-status">PENDING</span></li>
-            <li class="flow-step" data-step="4"><span class="flow-num">04</span><span class="flow-name">CHECK</span><span class="flow-desc">Economic viability gate</span><span class="flow-status">PENDING</span></li>
-            <li class="flow-step" data-step="5"><span class="flow-num">05</span><span class="flow-name">SIMULATE</span><span class="flow-desc">Pre-flight eth_call dry-run</span><span class="flow-status">PENDING</span></li>
-            <li class="flow-step" data-step="6"><span class="flow-num">06</span><span class="flow-name">EXECUTE</span><span class="flow-desc">Broadcast the atomic transaction</span><span class="flow-status">PENDING</span></li>
-            <li class="flow-step" data-step="7"><span class="flow-num">07</span><span class="flow-name">RESTORE</span><span class="flow-desc">HF confirmed at/above target</span><span class="flow-status">PENDING</span></li>
+            <li class="flow-step" data-step="1"><span class="flow-num">01</span><span class="flow-name">Monitor</span><span class="flow-desc">Read live Aave account data</span><span class="flow-status">Pending</span></li>
+            <li class="flow-step" data-step="2"><span class="flow-num">02</span><span class="flow-name">Predict</span><span class="flow-desc">Dynamic HF target from volatility</span><span class="flow-status">Pending</span></li>
+            <li class="flow-step" data-step="3"><span class="flow-num">03</span><span class="flow-name">Size</span><span class="flow-desc">Minimum Δd* repayment</span><span class="flow-status">Pending</span></li>
+            <li class="flow-step" data-step="4"><span class="flow-num">04</span><span class="flow-name">Check</span><span class="flow-desc">Economic viability gate</span><span class="flow-status">Pending</span></li>
+            <li class="flow-step" data-step="5"><span class="flow-num">05</span><span class="flow-name">Simulate</span><span class="flow-desc">Pre-flight eth_call dry-run</span><span class="flow-status">Pending</span></li>
+            <li class="flow-step" data-step="6"><span class="flow-num">06</span><span class="flow-name">Execute</span><span class="flow-desc">Broadcast the atomic transaction</span><span class="flow-status">Pending</span></li>
+            <li class="flow-step" data-step="7"><span class="flow-num">07</span><span class="flow-name">Restore</span><span class="flow-desc">HF confirmed at or above target</span><span class="flow-status">Pending</span></li>
           </ol>
         </div>
       </div>
 
       <div class="panel">
         <div class="panel-head">
-          <h2>One Transaction. Or No Transaction.</h2>
-          <span class="panel-tag">CONTRACT-ENFORCED ATOMICITY</span>
+          <h2>One transaction, or no transaction</h2>
+          <span class="panel-tag">Contract-enforced atomicity</span>
         </div>
         <div class="panel-body">
-          <p class="muted">The steps below execute inside a single on-chain transaction. If any step fails the HealthGuard check, the entire transaction reverts and the position is left byte-for-byte unchanged — proven by 13/13 passing Foundry fork tests.</p>
+          <p class="muted">These steps execute inside a single on-chain transaction. If any step fails the HealthGuard check, the entire transaction reverts and the position is left byte-for-byte unchanged — proven by 13/13 passing Foundry fork tests.</p>
           <div class="atomic-chain" id="atomic-chain">
-            <div class="atomic-step" data-a="flashloan">FLASH LOAN</div>
-            <div class="atomic-step" data-a="repay">DEBT REPAYMENT</div>
-            <div class="atomic-step" data-a="release">COLLATERAL RELEASE</div>
-            <div class="atomic-step" data-a="swap">DEX SWAP</div>
-            <div class="atomic-step" data-a="flashrepay">FLASH REPAYMENT</div>
-            <div class="atomic-step" data-a="healthcheck">HEALTH CHECK</div>
-            <div class="atomic-step" data-a="restored">POSITION RESTORED</div>
+            <div class="atomic-step" data-a="flashloan">Flash loan</div>
+            <div class="atomic-step" data-a="repay">Debt repayment</div>
+            <div class="atomic-step" data-a="release">Collateral release</div>
+            <div class="atomic-step" data-a="swap">DEX swap</div>
+            <div class="atomic-step" data-a="flashrepay">Flash repayment</div>
+            <div class="atomic-step" data-a="healthcheck">Health check</div>
+            <div class="atomic-step" data-a="restored">Position restored</div>
           </div>
           <div class="exec-result" id="exec-result"></div>
         </div>
       </div>
+
+      <!-- Fictional price animation, fenced behind a disclosure so it never sits
+           beside live metrics. Clearly labelled; never writes to a live card. -->
+      <details class="panel disclosure">
+        <summary class="panel-head">
+          <h2>Market crash simulation</h2>
+          <span class="panel-tag panel-tag-warn">Demo — not live data</span>
+        </summary>
+        <div class="panel-body">
+          <p class="muted">A fictional price animation used to illustrate how the trigger behaves. It never overwrites live metrics.</p>
+          <div class="btn-row">
+            <button class="btn btn-secondary" onclick="simulateMarketCrash()">Simulate market crash</button>
+          </div>
+          <div class="crash-sim" id="crash-sim" style="display:none;">
+            <div class="crash-row"><span>WETH (fictional)</span><span class="mono" id="crash-price">$3,000</span></div>
+            <div class="crash-row"><span>Health factor (fictional)</span><span class="mono" id="crash-hf">1.48</span></div>
+            <div class="crash-status" id="crash-status">—</div>
+          </div>
+        </div>
+      </details>
     </div>
   </section>
 
-  <!-- ============================ 6. SECURITY ============================ -->
-  <section class="view" id="view-security" data-view="security">
+  <!-- ============================ 4. AGENT LAYER ============================ -->
+  <section class="view" id="view-agent" data-view="agent">
     <div class="container">
       <div class="view-head">
-        <h1>Security Center</h1>
-        <p>Controls that bound every action. Items marked LIVE are read from the backend just now; items marked BY DESIGN are guarantees enforced in the vault's Solidity code.</p>
+        <h1>Agent</h1>
+        <p>Orchestration and explanation. The backend remains authoritative — the agent holds no tool that can submit a transaction.</p>
       </div>
-      <div class="grid-12 security-grid" id="security-grid">
-        <!-- populated by JS -->
+
+      <div class="agent-status-bar" id="agent-status-bar">
+        <span class="badge">Checking</span>
+      </div>
+
+      <!-- Disabled notice: replaces the whole workspace when /agent/status says off -->
+      <div class="panel" id="agent-disabled-panel" style="display:none;">
+        <div class="panel-head">
+          <h2>Agent layer disabled</h2>
+          <span class="panel-tag">GET /agent/status</span>
+        </div>
+        <div class="panel-body">
+          <p class="muted" id="agent-disabled-reason">—</p>
+          <p class="muted" style="margin-top:12px;">
+            To enable it, set <code class="mono">AGENT_ENABLED=true</code> and
+            <code class="mono">GEMINI_API_KEY</code> in the backend environment, install the optional
+            extra with <code class="mono">pip install -e ".[agent]"</code>, and restart the API.
+            Every other view is unaffected.
+          </p>
+        </div>
+      </div>
+
+      <div id="agent-workspace" style="display:none;">
+
+        <!-- Primary: chat + inbox -->
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Ask the agent</h2>
+            <span class="panel-tag">POST /agent/chat — read-only tools</span>
+          </div>
+          <div class="panel-body">
+            <p class="muted">Answers come from read-only tools run against the live keeper. Figures are read back from the deterministic pipeline, never authored by the model.</p>
+            <div class="chat-log" id="agent-chat-log"></div>
+            <form class="chat-form" id="agent-chat-form" autocomplete="off">
+              <input class="input" id="agent-chat-input" type="text"
+                     placeholder="Why is this borrower at risk?" />
+              <button class="btn btn-primary" type="submit" id="agent-chat-send">Send</button>
+              <button class="btn btn-ghost" type="button" onclick="clearChat()">Clear</button>
+            </form>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Approval inbox</h2>
+            <span class="panel-tag">Human approval is the only write path</span>
+          </div>
+          <div class="panel-body">
+            <div class="btn-row">
+              <button class="btn btn-primary" id="btn-crew-run" onclick="runCrew()">Run crew</button>
+              <button class="btn btn-ghost" onclick="loadAgentInbox()">Refresh</button>
+              <button class="btn btn-ghost agent-panic" onclick="agentPanic()">Panic — trip breaker</button>
+            </div>
+            <div id="agent-inbox"></div>
+          </div>
+        </div>
+
+        <!-- Secondary: tuning + audit -->
+        <div class="grid-12">
+          <details class="panel disclosure col-6">
+            <summary class="panel-head">
+              <h2>Mandate tuning</h2>
+              <span class="panel-tag">Requires a new borrower signature</span>
+            </summary>
+            <div class="panel-body">
+              <p class="muted">The agent can suggest a different mandate but cannot apply one. A registered <code class="mono">RiskParams</code> is EIP-712 signed by the borrower; changing any field invalidates the signature and the vault reverts <code class="mono">BadSignature</code>.</p>
+              <div id="agent-tuning"></div>
+            </div>
+          </details>
+
+          <details class="panel disclosure col-6">
+            <summary class="panel-head">
+              <h2>Audit trail</h2>
+              <span class="panel-tag">GET /agent/audit — append-only</span>
+            </summary>
+            <div class="panel-body">
+              <div class="btn-row"><button class="btn btn-ghost btn-sm" onclick="loadAgentAudit()">Refresh</button></div>
+              <div id="agent-audit"></div>
+            </div>
+          </details>
+        </div>
+
       </div>
     </div>
   </section>
 
-  <!-- ============================ 7. SYSTEM ============================ -->
+  <!-- ==================== 5. SYSTEM (system + security) ==================== -->
   <section class="view" id="view-system" data-view="system">
     <div class="container">
       <div class="view-head">
         <h1>System</h1>
-        <p>Keeper and backend operational state, from <code class="mono">GET /health</code>, <code class="mono">GET /metrics</code>, <code class="mono">GET /config</code>.</p>
+        <p>Keeper state and the controls that bound every action.</p>
       </div>
 
       <div class="grid-12 metrics-row">
-        <div class="metric-card col-3"><div class="metric-label">KEEPER</div><div class="metric-value" id="sys-keeper">—</div></div>
-        <div class="metric-card col-3"><div class="metric-label">RPC</div><div class="metric-value" id="sys-rpc">—</div></div>
-        <div class="metric-card col-3"><div class="metric-label">CIRCUIT BREAKER</div><div class="metric-value" id="sys-breaker">—</div></div>
-        <div class="metric-card col-3"><div class="metric-label">IN-FLIGHT</div><div class="metric-value mono" id="sys-inflight">—</div></div>
+        <div class="metric-card col-3"><div class="metric-label">Keeper</div><div class="metric-value metric-value-sm" id="sys-keeper">—</div></div>
+        <div class="metric-card col-3"><div class="metric-label">RPC</div><div class="metric-value metric-value-sm" id="sys-rpc">—</div></div>
+        <div class="metric-card col-3"><div class="metric-label">Circuit breaker</div><div class="metric-value metric-value-sm" id="sys-breaker">—</div></div>
+        <div class="metric-card col-3"><div class="metric-label">In-flight</div><div class="metric-value metric-value-sm mono" id="sys-inflight">—</div></div>
       </div>
 
       <div class="panel">
-        <div class="panel-head"><h2>Keeper Config</h2><span class="panel-tag">GET / PUT /config</span></div>
+        <div class="panel-head"><h2>Keeper config</h2><span class="panel-tag">GET / PUT /config</span></div>
         <div class="panel-body">
           <div class="config-grid">
-            <div><label class="field-label">Poll Interval (s)</label><input class="input mono" id="cfg-poll" /></div>
-            <div><label class="field-label">Breaker Threshold</label><input class="input mono" id="cfg-breaker" /></div>
-            <div><label class="field-label">Cooldown (s)</label><input class="input mono" id="cfg-cooldown" /></div>
-            <div><label class="field-label">Max Sim Bumps</label><input class="input mono" id="cfg-bumps" /></div>
+            <div><label class="field-label" for="cfg-poll">Poll interval (s)</label><input class="input mono" id="cfg-poll" /></div>
+            <div><label class="field-label" for="cfg-breaker">Breaker threshold</label><input class="input mono" id="cfg-breaker" /></div>
+            <div><label class="field-label" for="cfg-cooldown">Cooldown (s)</label><input class="input mono" id="cfg-cooldown" /></div>
+            <div><label class="field-label" for="cfg-bumps">Max sim bumps</label><input class="input mono" id="cfg-bumps" /></div>
           </div>
           <div class="toggle-row">
-            <label class="field-label">Autonomous Worker Enabled</label>
-            <button class="switch" id="cfg-auto-switch" onclick="toggleAuto()" aria-pressed="false"><span class="knob"></span></button>
+            <label class="field-label">Autonomous worker</label>
+            <button class="switch" id="cfg-auto-switch" onclick="toggleAuto()" aria-pressed="false" aria-label="Toggle autonomous worker"><span class="knob"></span></button>
           </div>
           <div class="btn-row">
-            <button class="btn btn-primary" onclick="saveConfig()">SAVE CONFIG</button>
-            <button class="btn btn-ghost" onclick="resetBreaker()">RESET BREAKER</button>
+            <button class="btn btn-primary" onclick="saveConfig()">Save config</button>
+            <button class="btn btn-ghost" onclick="resetBreaker()">Reset breaker</button>
           </div>
         </div>
       </div>
 
       <div class="panel">
-        <div class="panel-head"><h2>Counters</h2></div>
+        <div class="panel-head">
+          <h2>Security controls</h2>
+          <span class="panel-tag">Live values read now; by-design items enforced in Solidity</span>
+        </div>
+        <div class="panel-body">
+          <div class="grid-12 security-grid" id="security-grid">
+            <!-- populated by JS -->
+          </div>
+        </div>
+      </div>
+
+      <details class="panel disclosure">
+        <summary class="panel-head"><h2>Counters</h2><span class="panel-tag">GET /metrics</span></summary>
         <div class="panel-body">
           <table class="data-table" id="counters-table"><tbody></tbody></table>
         </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================ 8. AI ASSISTANT ============================ -->
-  <section class="view" id="view-assistant" data-view="assistant">
-    <div class="container">
-      <div class="view-head">
-        <h1>FinaX Assistant</h1>
-        <p>A read-only explainer over live backend state — a deterministic template, not a live model call, and never the decision-maker.</p>
-      </div>
-      <div class="panel">
-        <div class="panel-head">
-          <h2>FinaX Assistant</h2>
-          <span class="panel-tag">EXPLAINABILITY LAYER — BACKEND IS AUTHORITATIVE</span>
-        </div>
-        <div class="panel-body">
-          <div class="assistant-text" id="assistant-text">Load a position and run an assessment to get an explanation.</div>
-        </div>
-      </div>
+      </details>
     </div>
   </section>
 

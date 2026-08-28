@@ -20,6 +20,10 @@ __pycache__/
 .ruff_cache/
 *.egg-info/
 
+# Agent layer's local SQLite store (AGENT_DB_PATH). Created only once the
+# optional agent layer is enabled; it holds operational state, never source.
+.agent/
+
 # OS / editors
 .DS_Store
 Thumbs.db

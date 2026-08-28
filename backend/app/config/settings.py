@@ -54,5 +54,33 @@ class Settings(BaseSettings):
     # with the well-known anvil mnemonic (see ProtectionService._resolve_demo_signature).
     demo_mode: bool = Field(default=False, alias="DEMO_MODE")
 
+    # --- Agentic layer (FR-18..FR-22) -------------------------------------
+    # Every default here reproduces today's behaviour: with AGENT_ENABLED off (or no API key,
+    # or the optional `agent` extra uninstalled) the layer is inert, its routes refuse cleanly,
+    # and the keeper runs exactly as it does without this code. The layer never widens the
+    # borrower's signed mandate - these are the operator's own, stricter ceilings.
+    agent_enabled: bool = Field(default=False, alias="AGENT_ENABLED")
+    gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
+    agent_model: str = Field(default="gemini-2.5-flash", alias="AGENT_MODEL")
+    agent_temperature: float = Field(default=0.2, alias="AGENT_TEMPERATURE")
+    agent_timeout_seconds: float = Field(default=30.0, alias="AGENT_TIMEOUT_SECONDS")
+    agent_max_tool_loops: int = Field(default=6, alias="AGENT_MAX_TOOL_LOOPS")
+    agent_db_path: str = Field(default=".agent/finax_agent.db", alias="AGENT_DB_PATH")
+    agent_chat_history_turns: int = Field(default=20, alias="AGENT_CHAT_HISTORY_TURNS")
+
+    # Policy-gate ceilings (app/agent/policy.py). Applied on top of RiskParams; stricter wins.
+    agent_max_repay_fraction: float = Field(default=0.50, alias="AGENT_MAX_REPAY_FRACTION")
+    agent_max_cost_bps: int = Field(default=200, alias="AGENT_MAX_COST_BPS")
+    agent_min_hf_gap_bps: int = Field(default=25, alias="AGENT_MIN_HF_GAP_BPS")
+    agent_proposal_ttl_seconds: int = Field(default=900, alias="AGENT_PROPOSAL_TTL_SECONDS")
+    agent_max_proposals_per_hour: int = Field(default=3, alias="AGENT_MAX_PROPOSALS_PER_HOUR")
+    agent_max_proposals_global_per_hour: int = Field(
+        default=12, alias="AGENT_MAX_PROPOSALS_GLOBAL_PER_HOUR"
+    )
+
+    # Let the worker tick drive the crew. Off even when the agent is on: the keeper loop must
+    # never wait on a third-party model to decide whether to protect a position.
+    agent_crew_on_tick: bool = Field(default=False, alias="AGENT_CREW_ON_TICK")
+
 
 settings = Settings()

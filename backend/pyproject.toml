@@ -21,6 +21,14 @@ dev = [
     "ruff>=0.5",
     "mypy>=1.10",
 ]
+# The agentic layer (app/agent) is an OPTIONAL extra, deliberately kept out of `dependencies`.
+# The keeper must install, boot, and pass its whole suite with none of this present — the agent
+# is an orchestration/explanation layer over the deterministic pipeline, never a requirement of it.
+agent = [
+    "langgraph>=1.2,<2",
+    "langchain-core>=1.6.1,<2",
+    "langchain-google-genai>=4.3,<5",
+]
 
 [tool.ruff]
 line-length = 100
@@ -44,3 +52,9 @@ filterwarnings = [
 [tool.mypy]
 python_version = "3.11"
 strict = true
+
+# The agent stack ships partial/absent stubs and is an optional extra, so it may not be
+# installed at all when mypy runs. Neither case should fail a strict check of our own code.
+[[tool.mypy.overrides]]
+module = ["langgraph.*", "langchain_core.*", "langchain_google_genai.*"]
+ignore_missing_imports = true

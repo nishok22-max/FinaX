@@ -52,6 +52,7 @@ If any step in the atomic sequence cannot complete under acceptable economic con
 - **NG4** — No cross-chain protection; Arbitrum One only.
 - **NG5** — Does not guarantee protection when no on-chain execution path exists (e.g., zero DEX liquidity, oracle outage, or gas exceeding capital-at-risk) — in those cases it correctly declines and reverts.
 - **NG6 — Scope discipline for v1:** the **primary path is single-collateral WETH → single-debt USDC**; multi-collateral selection (FR-5) generalizes this *after* the WETH/USDC path works perfectly. The volatility model is a **simple rolling standard deviation** feeding `HF_target` — **no ML / neural model** in v1.
+  *Note (FR-18…FR-22):* the optional agentic layer does not relax this. No model output participates in risk, sizing, or viability; the LLM orchestrates and explains, and the numbers it reports are read back from the deterministic pipeline. "Math proposes, simulation validates, Solidity enforces" is unchanged.
 
 ---
 
@@ -209,6 +210,46 @@ Each requirement is testable; acceptance criteria are given inline. IDs are refe
 
 - **FR-17 — Circuit breaker.** The keeper SHALL pause autonomous submission on abnormal conditions — N consecutive tx failures (default 3), stale oracle, inconsistent RPC, invalid DEX quote, or abnormally high gas — and require operator review to resume.
   *Accept:* After 3 consecutive failed rescues (or a stale-oracle signal), the loop stops submitting and surfaces a paused state via `/metrics`; no further gas is spent until reset.
+
+### 6.1 Agentic layer (optional, additive)
+
+FR-18…FR-22 describe an **optional** LLM-driven layer over the requirements above. It is shipped as
+a separate install extra and defaults to off; with it absent or disabled, FR-1…FR-17 behave exactly
+as specified. It does not amend NG6: the *decision* math remains non-ML (see the NG6 note).
+
+- **FR-18 — Agentic orchestration & explanation.** The system MAY run a multi-agent crew that
+  observes position state, narrates risk in natural language, answers operator questions, and
+  selects a course of action from a **fixed enumeration**. The crew SHALL NOT compute any numeric
+  quantity that reaches a transaction; every figure originates from the deterministic pipeline
+  (FR-2, FR-3, FR-10, FR-11).
+  *Accept:* No LLM output is an argument to the submission path; disabling the layer changes no
+  keeper behaviour.
+
+- **FR-19 — Deterministic policy gate.** Every agent-originated proposal SHALL pass a pure,
+  LLM-free policy gate — bounds on repay size, cost, the signed HF band, the collateral allow-list,
+  breaker and in-flight state, and rate limits — before it is persisted, and the gate SHALL be
+  **re-evaluated against a freshly recomputed assessment** immediately before execution.
+  *Accept:* A proposal whose position moved while awaiting approval is rejected as stale rather
+  than executed on figures that no longer hold.
+
+- **FR-20 — Human-in-the-loop approval.** An agent-originated proposal SHALL NOT reach the chain
+  without an explicit human approval action. Approval SHALL execute through the *same* path as a
+  manual request — breaker (FR-17) → in-flight lock (FR-16) → sizing (FR-3) → viability (FR-11) →
+  simulation → atomic submit (FR-8). The agent SHALL possess no capability to submit.
+  *Accept:* The agent's tool surface contains no submission tool; approval on a paused breaker is
+  refused and no gas is spent.
+
+- **FR-21 — Bounded-mandate immutability.** The agent SHALL NOT modify a borrower's signed
+  `RiskParams`. A proposed parameter change SHALL be emitted as a **re-sign request** carrying the
+  full new `RiskParams` for the borrower to sign (FR-13, FR-15).
+  *Accept:* No agent path mutates a registered mandate; execution always replays the stored
+  borrower-signed pair verbatim, and a tampered mandate reverts `BadSignature` on chain.
+
+- **FR-22 — Numeric provenance.** Every figure the agent surfaces SHALL be traceable to a named
+  backend response field, and any figure that cannot be traced SHALL be **visibly marked as
+  unverified** rather than rendered in the same visual language as live data (NFR-5).
+  *Accept:* Each agent reply carries a source map; untraceable figures render in a distinct
+  degraded style.
 
 ---
 

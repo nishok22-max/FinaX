@@ -36,18 +36,31 @@ const state = {
   protectResult: null,
   metrics: null,
   config: null,
+  agent: {
+    status: null,       // GET /agent/status
+    threadId: null,     // server-minted on the first reply, reused after
+    proposals: [],
+    tuning: [],
+    audit: [],
+    sending: false,
+  },
 };
 
 // ── Section navigation ──────────────────────────────────────────────
-const VIEWS = ["command-center", "position", "risk", "protection", "execution", "security", "system", "assistant"];
+// Five views. Position absorbs the old position/risk/protection/assistant
+// screens - they all read the same `state.position`/`state.assessment`, so
+// four thin tables over one dataset became one coherent view. System absorbs
+// the security checklist. Every element id survived the merge, so the render
+// functions below are unchanged.
+const VIEWS = ["overview", "position", "execution", "agent", "system"];
 
 function go(view) {
   window.location.hash = view;
 }
 
 function renderNav() {
-  const hash = (window.location.hash || "#command-center").slice(1);
-  const view = VIEWS.includes(hash) ? hash : "command-center";
+  const hash = (window.location.hash || "#overview").slice(1);
+  const view = VIEWS.includes(hash) ? hash : "overview";
   document.querySelectorAll(".view").forEach((el) => el.classList.toggle("active", el.dataset.view === view));
   document.querySelectorAll(".navlinks a, .navlinks-mobile a").forEach((el) => {
     el.classList.toggle("active", el.dataset.nav === view);
@@ -55,6 +68,10 @@ function renderNav() {
   document.getElementById("navlinks-mobile").classList.remove("open");
   document.getElementById("btn-menu").setAttribute("aria-expanded", "false");
   window.scrollTo({ top: 0, behavior: "instant" in window ? "instant" : "auto" });
+  // Entering the Agent view refreshes it. Nothing polls it in the background:
+  // the agent layer is optional, and a disabled backend must stay silent rather
+  // than emit a 503 toast every few seconds behind an unrelated tab.
+  if (view === "agent") refreshAgentView();
 }
 window.addEventListener("hashchange", renderNav);
 
@@ -69,9 +86,15 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.key === "Enter") loadPosition();
   });
 
+  document.getElementById("agent-chat-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    sendChat();
+  });
+
   pollHealth();
   pollMetrics();
   loadConfig();
+  pollAgentStatus();
   setInterval(pollHealth, 8000);
   setInterval(pollMetrics, 7000);
 });
@@ -95,21 +118,21 @@ async function pollHealth() {
     const chip = document.getElementById("chip-system-status");
     const txt = document.getElementById("txt-system-status");
     chip.className = "chip chip-status " + (data.rpc_connected ? "ok" : "bad");
-    txt.textContent = data.rpc_connected ? "SYSTEM ACTIVE" : "RPC DOWN";
+    txt.textContent = data.rpc_connected ? "System active" : "RPC down";
 
-    document.getElementById("cc-rpc").textContent = data.rpc_connected ? "CONNECTED" : "DOWN";
+    document.getElementById("cc-rpc").textContent = data.rpc_connected ? "Connected" : "Down";
     document.getElementById("cc-block").textContent = data.block_number ? `block ${data.block_number.toLocaleString()}` : "block —";
-    document.getElementById("sys-rpc").textContent = data.rpc_connected ? "CONNECTED" : "DOWN";
+    document.getElementById("sys-rpc").textContent = data.rpc_connected ? "Connected" : "Down";
   } catch (err) {
     // Clear the cached health too. Leaving it set made renderSecurity() keep
     // showing "RPC CONNECTION: CONNECTED" in green while the backend was down.
     state.health = null;
     const chip = document.getElementById("chip-system-status");
     chip.className = "chip chip-status bad";
-    document.getElementById("txt-system-status").textContent = "UNREACHABLE";
-    document.getElementById("cc-rpc").textContent = "UNREACHABLE";
+    document.getElementById("txt-system-status").textContent = "Unreachable";
+    document.getElementById("cc-rpc").textContent = "Unreachable";
     document.getElementById("cc-block").textContent = "block —";
-    document.getElementById("sys-rpc").textContent = "UNREACHABLE";
+    document.getElementById("sys-rpc").textContent = "Unreachable";
     renderSecurity();
   }
 }
@@ -121,15 +144,15 @@ async function pollMetrics() {
     const data = await res.json();
     state.metrics = data;
 
-    document.getElementById("cc-breaker").textContent = data.breaker_paused ? "PAUSED" : "ARMED";
+    document.getElementById("cc-breaker").textContent = data.breaker_paused ? "Paused" : "Armed";
     // Threshold comes from /config (and is editable in the System tab), so it must
     // not be hardcoded here - setting it to 5 used to still display "... / 3".
     const breakerMax = state.config?.breaker_max_consecutive_failures ?? "?";
     document.getElementById("cc-breaker-sub").textContent =
       `${data.breaker_consecutive_failures} / ${breakerMax} failures`;
-    document.getElementById("sys-breaker").textContent = data.breaker_paused ? "PAUSED" : "ARMED";
+    document.getElementById("sys-breaker").textContent = data.breaker_paused ? "Paused" : "Armed";
     document.getElementById("sys-inflight").textContent = data.in_flight_borrowers.length;
-    document.getElementById("sys-keeper").textContent = state.config?.autonomous_enabled ? "RUNNING" : "MANUAL";
+    document.getElementById("sys-keeper").textContent = state.config?.autonomous_enabled ? "Running" : "Manual";
 
     const banner = document.getElementById("breaker-banner");
     if (data.breaker_paused) {
@@ -218,7 +241,7 @@ async function loadPosition() {
   state.borrower = addr;
   const btn = document.getElementById("btn-load");
   btn.disabled = true;
-  btn.textContent = "LOADING…";
+  btn.textContent = "Loading…";
   document.getElementById("walletbar-hint").textContent = "";
   try {
     const res = await fetch(`${API_BASE}/positions/${addr}`);
@@ -247,7 +270,7 @@ async function loadPosition() {
     console.warn("GET /positions raw error:", err.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = "LOAD POSITION";
+    btn.textContent = "Load position";
   }
 }
 
@@ -273,18 +296,18 @@ function clearPositionDisplay() {
    "rk-hf", "rk-target", "rk-state", "ad-risk", "ad-target", "ad-repay", "ad-collateral", "ad-cost", "ad-viable",
   ].forEach((id) => { const el = document.getElementById(id); if (el) el.textContent = "—"; });
   document.getElementById("cc-hf-sub").textContent = "No data — last load failed";
-  document.getElementById("risk-badge").textContent = "NO DATA";
+  document.getElementById("risk-badge").textContent = "No data";
   document.getElementById("risk-badge").style.color = "var(--text-muted)";
   document.getElementById("risk-badge").style.borderColor = "var(--border)";
   document.getElementById("risk-explain").textContent = "Could not read this wallet's position — see the error above. Try the demo address instead.";
-  document.getElementById("decision-tag").textContent = "NO ASSESSMENT YET";
+  document.getElementById("decision-tag").textContent = "No assessment yet";
   document.getElementById("protection-explain").textContent = "Run an assessment to see the backend's reasoning here.";
   document.getElementById("assistant-text").textContent = "Load a position and run an assessment to get an explanation.";
   resetFlowSteps();
   document.getElementById("exec-result").className = "exec-result";
   document.querySelectorAll(".atomic-step").forEach((el) => (el.className = "atomic-step pending"));
-  document.getElementById("hfc-current-label").textContent = "CURRENT";
-  document.getElementById("hfc-target-label").textContent = "TARGET";
+  document.getElementById("hfc-current-label").textContent = "Current";
+  document.getElementById("hfc-target-label").textContent = "Target";
 }
 
 // ── Presentational risk mapping (derived from REAL backend state only) ─
@@ -292,16 +315,16 @@ function clearPositionDisplay() {
 // READY/SUBMITTED -> HIGH RISK, RESTORED -> SAFE, REVERTED -> HIGH RISK.
 function riskLevelFor(positionState) {
   const map = {
-    HEALTHY: { label: "SAFE", cls: "badge-safe" },
-    WATCH: { label: "WATCH", cls: "badge-warn" },
-    ASSESSING: { label: "HIGH RISK", cls: "badge-danger" },
-    DECLINED: { label: "WATCH", cls: "badge-warn" },
-    READY: { label: "HIGH RISK", cls: "badge-danger" },
-    SUBMITTED: { label: "HIGH RISK", cls: "badge-danger" },
-    RESTORED: { label: "SAFE", cls: "badge-safe" },
-    REVERTED: { label: "HIGH RISK", cls: "badge-danger" },
+    HEALTHY: { label: "Safe", cls: "badge-safe" },
+    WATCH: { label: "Watch", cls: "badge-warn" },
+    ASSESSING: { label: "High risk", cls: "badge-danger" },
+    DECLINED: { label: "Watch", cls: "badge-warn" },
+    READY: { label: "High risk", cls: "badge-danger" },
+    SUBMITTED: { label: "High risk", cls: "badge-danger" },
+    RESTORED: { label: "Safe", cls: "badge-safe" },
+    REVERTED: { label: "High risk", cls: "badge-danger" },
   };
-  return map[positionState] || { label: positionState || "UNKNOWN", cls: "" };
+  return map[positionState] || { label: positionState || "Unknown", cls: "" };
 }
 
 // ── Render: Command Center ──────────────────────────────────────────
@@ -380,10 +403,10 @@ function renderProtection() {
   const a = state.assessment;
   const tag = document.getElementById("decision-tag");
   if (!a) {
-    tag.textContent = "NO ASSESSMENT YET";
+    tag.textContent = "No assessment yet";
     return;
   }
-  tag.textContent = a.viable ? "VIABLE" : "DECLINED";
+  tag.textContent = a.viable ? "Viable" : "Declined";
   tag.style.color = a.viable ? "var(--success)" : "var(--warning)";
 
   const risk = state.position ? riskLevelFor(state.position.state) : { label: "—" };
@@ -393,8 +416,8 @@ function renderProtection() {
   document.getElementById("ad-collateral").textContent = symbolOf(a.collateral_asset);
   document.getElementById("ad-cost").textContent = `${a.est_cost_bps} bps`;
   document.getElementById("ad-viable").innerHTML = a.viable
-    ? `<span class="badge badge-safe">PASS</span>`
-    : `<span class="badge badge-warn">DECLINED</span>`;
+    ? `<span class="badge badge-safe">Pass</span>`
+    : `<span class="badge badge-warn">Declined</span>`;
 
   document.getElementById("protection-explain").textContent = a.viable
     ? `A rescue is viable. The pipeline would repay ${(a.repay_amount / 1e6).toFixed(2)} USDC sourced from ${symbolOf(a.collateral_asset)}, `
@@ -410,7 +433,7 @@ async function runAssessmentOnly() {
   if (!addr) { toast("error", "Load a position first."); return; }
   const btn = document.getElementById("btn-assess");
   btn.disabled = true;
-  btn.textContent = "RUNNING…";
+  btn.textContent = "Running…";
   try {
     const res = await fetch(`${API_BASE}/positions/${addr}/assessment`, {
       method: "POST",
@@ -428,7 +451,7 @@ async function runAssessmentOnly() {
     toast("error", "POST /assessment failed: " + err.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = "RUN DRY-RUN ASSESSMENT";
+    btn.textContent = "Run dry-run assessment";
   }
 }
 
@@ -499,7 +522,7 @@ function renderExecution() {
 function resetFlowSteps() {
   document.querySelectorAll(".flow-step").forEach((el) => {
     el.className = "flow-step";
-    el.querySelector(".flow-status").textContent = "PENDING";
+    el.querySelector(".flow-status").textContent = "Pending";
   });
 }
 function setFlow(n, cls, label) {
@@ -509,7 +532,7 @@ function setFlow(n, cls, label) {
 }
 
 // The single guided real run: health -> position -> assessment -> protect.
-// Used by both the Execution tab's "EXECUTE PROTECTION" and the Command
+// Used by both the Execution tab's "Execute protection" and the Command
 // Center's "RUN PROTECTION DEMO" (which is real, unlike the crash simulator).
 async function runFullCheck() {
   const addr = state.borrower || document.getElementById("borrower-input").value.trim();
@@ -524,62 +547,62 @@ async function runFullCheck() {
 
   const btn = document.getElementById("btn-execute");
   btn.disabled = true;
-  btn.textContent = "RUNNING…";
+  btn.textContent = "Running…";
 
   try {
     // 1. MONITOR
-    setFlow(1, "active", "RUNNING");
+    setFlow(1, "active", "Running");
     const posRes = await fetch(`${API_BASE}/positions/${addr}`);
     const pos = await posRes.json();
     if (!posRes.ok) throw new Error(pos.detail || `HTTP ${posRes.status}`);
     state.position = pos;
     renderPosition();
     renderCommandCenter();
-    setFlow(1, "done", "DONE");
+    setFlow(1, "done", "Done");
 
     if (!pos.has_debt) {
-      setFlow(2, "skipped", "SKIPPED");
-      setFlow(3, "skipped", "SKIPPED");
-      setFlow(4, "skipped", "SKIPPED");
-      setFlow(5, "skipped", "SKIPPED");
-      setFlow(6, "skipped", "SKIPPED");
-      setFlow(7, "skipped", "SKIPPED");
+      setFlow(2, "skipped", "Skipped");
+      setFlow(3, "skipped", "Skipped");
+      setFlow(4, "skipped", "Skipped");
+      setFlow(5, "skipped", "Skipped");
+      setFlow(6, "skipped", "Skipped");
+      setFlow(7, "skipped", "Skipped");
       showExecResult("No open debt on this wallet. Nothing to protect.");
       return;
     }
 
     // 2. PREDICT + 3. SIZE (both inside the single /assessment call)
-    setFlow(2, "active", "RUNNING");
+    setFlow(2, "active", "Running");
     const assessPromise = fetch(`${API_BASE}/positions/${addr}/assessment`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(buildParamsPayload(addr)),
     });
     await sleep(400);
-    setFlow(2, "done", "DONE");
-    setFlow(3, "active", "RUNNING");
+    setFlow(2, "done", "Done");
+    setFlow(3, "active", "Running");
     const assessRes = await assessPromise;
     const assessment = await assessRes.json();
     if (!assessRes.ok) throw new Error(assessment.detail ? JSON.stringify(assessment.detail) : `HTTP ${assessRes.status}`);
     state.assessment = assessment;
-    setFlow(3, "done", "DONE");
+    setFlow(3, "done", "Done");
     renderProtection(); renderCommandCenter(); renderRisk();
 
     // 4. CHECK (viability, from the same response)
-    setFlow(4, "active", "RUNNING");
+    setFlow(4, "active", "Running");
     await sleep(250);
     if (!assessment.viable) {
-      setFlow(4, "declined", "DECLINED");
-      setFlow(5, "skipped", "SKIPPED");
-      setFlow(6, "skipped", "SKIPPED");
-      setFlow(7, "skipped", "SKIPPED");
+      setFlow(4, "declined", "Declined");
+      setFlow(5, "skipped", "Skipped");
+      setFlow(6, "skipped", "Skipped");
+      setFlow(7, "skipped", "Skipped");
       showExecResult(`Declined at the viability gate: ${assessment.reason || "not economically worthwhile"}. No transaction was built.`);
       return;
     }
-    setFlow(4, "done", "PASS");
+    setFlow(4, "done", "Pass");
 
     // 5. SIMULATE + 6. EXECUTE (inside /protect)
-    setFlow(5, "active", "RUNNING");
+    setFlow(5, "active", "Running");
     const protectRes = await fetch(`${API_BASE}/positions/${addr}/protect`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -597,10 +620,10 @@ async function runFullCheck() {
     state.protectResult = protectData;
 
     const declinedReason = protectData.reason || "";
-    if (protectData.state === "DECLINED" && declinedReason.includes("simulation")) {
+    if (protectData.state === "Declined" && declinedReason.includes("simulation")) {
       setFlow(5, "failed", "REVERTED");
-      setFlow(6, "skipped", "SKIPPED");
-      setFlow(7, "skipped", "SKIPPED");
+      setFlow(6, "skipped", "Skipped");
+      setFlow(7, "skipped", "Skipped");
       markAtomic(["flashloan"], "fail");
       showExecResult(explainRevert(declinedReason, addr));
       return;
@@ -608,27 +631,27 @@ async function runFullCheck() {
     // Breaker-paused, in-flight, and viability declines never reach the simulator.
     // Marking step 5 PASS for those claimed a dry-run that never ran.
     if (protectData.state !== "RESTORED" && !protectData.submitted) {
-      setFlow(5, "skipped", "NOT RUN");
-      setFlow(6, "skipped", "SKIPPED");
-      setFlow(7, "skipped", "SKIPPED");
+      setFlow(5, "skipped", "Not run");
+      setFlow(6, "skipped", "Skipped");
+      setFlow(7, "skipped", "Skipped");
       showExecResult(`Stopped before simulation - ${declinedReason || protectData.state}.`);
       renderAssistant();
       return;
     }
 
-    setFlow(5, "done", "PASS");
-    setFlow(6, "active", "RUNNING");
+    setFlow(5, "done", "Pass");
+    setFlow(6, "active", "Running");
     await sleep(250);
 
     if (protectData.state === "RESTORED") {
-      setFlow(6, "done", "DONE");
+      setFlow(6, "done", "Done");
       setFlow(7, "done", "RESTORED");
       if (protectData.via_fallback) {
         // HF really did improve, but via a direct Aave repay - no flash loan, no
         // swap, no HealthGuard. Never present that as the atomic vault rescue.
         markAtomic(["repay"], "ok");
         markAtomic(["flashloan", "release", "swap", "flashrepay", "healthcheck"], "fail");
-        setFlow(7, "declined", "PARTIAL");
+        setFlow(7, "declined", "Partial");
         showExecResult(
           `Health factor restored, but NOT by the atomic vault path. ${protectData.reason || ""} ` +
           `Only the debt repayment executed - no flash loan, collateral swap, or HealthGuard check. ` +
@@ -640,19 +663,19 @@ async function runFullCheck() {
       }
     } else {
       setFlow(6, "declined", protectData.state);
-      setFlow(7, "skipped", "SKIPPED");
+      setFlow(7, "skipped", "Skipped");
       markAtomic(["flashloan"], protectData.submitted ? "ok" : "pending");
       showExecResult(`Execution stopped in state "${protectData.state}": ${declinedReason || "see technical details"}.`);
     }
     renderAssistant();
   } catch (err) {
     const activeStep = document.querySelector(".flow-step.active");
-    if (activeStep) { activeStep.className = "flow-step failed"; activeStep.querySelector(".flow-status").textContent = "ERROR"; }
+    if (activeStep) { activeStep.className = "flow-step failed"; activeStep.querySelector(".flow-status").textContent = "Error"; }
     toast("error", err.message);
     showExecResult(`Error: ${err.message}`);
   } finally {
     btn.disabled = false;
-    btn.textContent = "EXECUTE PROTECTION";
+    btn.textContent = "Execute protection";
   }
 }
 // Decode the vault/OpenZeppelin custom-error selectors that actually come back
@@ -714,16 +737,16 @@ function showExecResult(text) {
 function renderSecurity() {
   const m = state.metrics;
   const items = [
-    { name: "CIRCUIT BREAKER", src: "LIVE", ok: m ? !m.breaker_paused : null, okText: "ARMED", badText: "PAUSED" },
-    { name: "IN-FLIGHT LOCK", src: "LIVE", ok: m ? m.in_flight_borrowers.length === 0 : null, okText: "CLEAR", badText: "HELD" },
-    { name: "RPC CONNECTION", src: "LIVE", ok: state.health ? state.health.rpc_connected : null, okText: "CONNECTED", badText: "DOWN" },
-    { name: "EIP-712 SIGNATURE", src: "BY DESIGN", ok: true, okText: "ENFORCED ON-CHAIN" },
-    { name: "KEEPER AUTHORIZATION", src: "BY DESIGN", ok: true, okText: "ENFORCED ON-CHAIN" },
-    { name: "NONCE", src: "BY DESIGN", ok: true, okText: "REPLAY-PROTECTED" },
-    { name: "DEADLINE", src: "BY DESIGN", ok: true, okText: "EXPIRY-ENFORCED" },
-    { name: "A-TOKEN ALLOWANCE", src: "BY DESIGN", ok: true, okText: "OPT-IN ONLY" },
-    { name: "SLIPPAGE BOUND", src: "BY DESIGN", ok: true, okText: "CONTRACT-CAPPED" },
-    { name: "HEALTH GUARD", src: "BY DESIGN", ok: true, okText: "NO-WORSE INVARIANT" },
+    { name: "Circuit breaker", src: "Live", ok: m ? !m.breaker_paused : null, okText: "Armed", badText: "Paused" },
+    { name: "In-flight lock", src: "Live", ok: m ? m.in_flight_borrowers.length === 0 : null, okText: "Clear", badText: "Held" },
+    { name: "RPC connection", src: "Live", ok: state.health ? state.health.rpc_connected : null, okText: "Connected", badText: "Down" },
+    { name: "EIP-712 signature", src: "By design", ok: true, okText: "On-chain" },
+    { name: "Keeper authorization", src: "By design", ok: true, okText: "On-chain" },
+    { name: "Nonce", src: "By design", ok: true, okText: "Replay-proof" },
+    { name: "Deadline", src: "By design", ok: true, okText: "Expiry-enforced" },
+    { name: "aToken allowance", src: "By design", ok: true, okText: "Opt-in only" },
+    { name: "Slippage bound", src: "By design", ok: true, okText: "Contract-capped" },
+    { name: "Health guard", src: "By design", ok: true, okText: "No-worse invariant" },
   ];
   const grid = document.getElementById("security-grid");
   grid.innerHTML = items.map((it) => {
@@ -737,207 +760,591 @@ function renderSecurity() {
   }).join("");
 }
 
-// ── Assistant (Executive AI Summary, Rescue Plan & Future Statistics) ──
+// ── Forecast (rendered inside the Position view) ──────────────────────
+// Presentation only. Every figure comes from AssessmentResponse or the
+// position snapshot; nothing is computed here that the backend did not
+// already compute, and with no assessment on file we render nothing rather
+// than fall back to invented constants. An earlier revision did exactly that
+// - fabricating a cost, a target and a liquidation threshold, then rendering
+// them in the same visual language as live data - which is the one mistake
+// this whole console is built to avoid.
 function renderAssistant() {
   const el = document.getElementById("assistant-text");
-  const p = state.position, a = state.assessment, pr = state.protectResult;
+  const p = state.position, a = state.assessment;
   if (!p) {
-    el.innerHTML = `<p class="muted">Load a wallet position in the top bar to generate the autonomous rescue plan and future statistics forecast.</p>`;
+    el.innerHTML = `<p class="muted">Load a position to see the forecast.</p>`;
     return;
   }
 
-  const risk = riskLevelFor(p.state);
   const currentHf = p.hf && isFinite(p.hf) ? p.hf : null;
   const currentDebt = p.debt_usd || 0;
   const currentCollat = p.collateral_usd || 0;
   const currentEquity = Math.max(0, currentCollat - currentDebt);
 
-  // Every figure below must come from a real assessment. Earlier revisions fell
-  // back to invented constants (8 bps, target 1.25, LT 0.825) and re-implemented
-  // the sizing formula in the browser, rendering guesses in the same visual
-  // language as live data - directly contradicting this file's own contract that
-  // no financial logic is duplicated here. With no assessment we show nothing.
-  const hasAssessment = !!(a && a.repay_amount);
-  if (!a) {
-    el.innerHTML = `
-      <div class="asst-hero">
-        <div class="asst-hero-left">
-          <div class="asst-hero-title">Position Analysis for <span class="mono">${p.borrower.slice(0, 8)}...${p.borrower.slice(-6)}</span></div>
-          <div class="asst-hero-desc">Risk Status: <strong class="badge ${riskLevelFor(p.state).cls}">${riskLevelFor(p.state).label}</strong> (Backend State: <code class="mono">${p.state}</code>)</div>
-        </div>
-      </div>
-      <p class="muted" style="margin-top:14px;">Health factor <span class="mono">${fmtHf(p.hf)}</span>,
-      collateral <span class="mono">${fmtUsd(currentCollat)}</span>,
-      debt <span class="mono">${fmtUsd(currentDebt)}</span>.</p>
-      <p class="muted">Run a dry-run assessment on the Protection tab to produce the rescue plan.
-      No sizing, cost, or forecast figures are shown until the backend has computed them.</p>`;
+  if (!p.has_debt || currentDebt === 0) {
+    el.innerHTML = `<p class="muted">No open debt on Aave V3 for this account
+      (collateral ${fmtUsd(currentCollat)}). Health factor is infinite and no
+      intervention applies.</p>`;
     return;
   }
 
-  const repayUsd = hasAssessment ? a.repay_amount / 1e6 : 0;
+  if (!a) {
+    el.innerHTML = `<p class="muted">Health factor <span class="mono">${fmtHf(p.hf)}</span>,
+      collateral <span class="mono">${fmtUsd(currentCollat)}</span>,
+      debt <span class="mono">${fmtUsd(currentDebt)}</span>.
+      Run a dry-run assessment above to produce the rescue forecast — no sizing, cost
+      or projection is shown until the backend has computed it.</p>`;
+    return;
+  }
+
+  if (!a.viable) {
+    el.innerHTML = `<p class="muted">The pipeline declined to act:
+      ${esc(a.reason || "not economically viable")}. No forecast is shown for a
+      declined rescue, because no intervention would be made.</p>`;
+    return;
+  }
+
+  const repayUsd = a.repay_amount / 1e6;
   const targetHf = a.hf_target;
   const estCostBps = a.est_cost_bps;
   const collatSymbol = a.collateral_asset ? symbolOf(a.collateral_asset) : "—";
 
-  const collatSpent = repayUsd * (1 + (estCostBps / 10000));
+  const collatSpent = repayUsd * (1 + estCostBps / 10000);
   const futureDebt = Math.max(0, currentDebt - repayUsd);
   const futureCollat = Math.max(0, currentCollat - collatSpent);
-  const futureHf = currentDebt > 0 && repayUsd > 0 ? targetHf : (currentDebt === 0 ? "∞" : fmtHf(currentHf));
   const futureEquity = Math.max(0, futureCollat - futureDebt);
-  // Illustrative only: Aave's liquidation bonus is per-reserve (the backend models
-  // it as liq_bonus_bps) and is not exposed on AssessmentResponse, so this uses a
-  // nominal 10% and is labelled as an estimate wherever it is displayed.
-  const penaltyAvoided = currentDebt * 0.10;
   const interventionCost = collatSpent - repayUsd;
-  const netBenefit = Math.max(0, penaltyAvoided - interventionCost);
 
-  let html = `
-    <!-- Executive Verdict Hero -->
-    <div class="asst-hero">
-      <div class="asst-hero-left">
-        <div class="asst-hero-title">Position Analysis for <span class="mono">${p.borrower.slice(0, 8)}...${p.borrower.slice(-6)}</span></div>
-        <div class="asst-hero-desc">Risk Status: <strong class="badge ${risk.cls}">${risk.label}</strong> (Backend State: <code class="mono">${p.state}</code>)</div>
-      </div>
-      <div class="asst-hero-right">
-        <span class="badge ${currentHf && currentHf <= 1.15 ? 'badge-danger' : 'badge-safe'}">
-          ${currentHf && currentHf <= 1.15 ? 'INTERVENTION REQUIRED' : 'POSITION SAFE'}
-        </span>
-      </div>
-    </div>
-  `;
+  const row = (label, before, after, delta) => `
+    <tr><th>${label}</th>
+      <td class="mono">${before}</td>
+      <td class="mono">${after}</td>
+      <td class="mono fc-delta">${delta}</td></tr>`;
 
-  if (!p.has_debt || currentDebt === 0) {
-    html += `
-      <div class="asst-card" style="margin-top: 14px;">
-        <div class="asst-card-title">Zero Debt Status</div>
-        <div class="asst-card-val" style="color:var(--success);">Health Factor: ∞ (Infinite)</div>
-        <p class="asst-card-sub" style="margin-top:8px;">This account holds $${currentCollat.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} in collateral with $0.00 outstanding debt. Liquidation risk is zero; no rescue intervention is required.</p>
-      </div>
-    `;
-    el.innerHTML = html;
-    return;
-  }
-
-  // 1. Future Statistics Matrix
-  html += `
-    <div class="asst-section-title">📊 Future Statistics Forecast (Before vs. After Rescue)</div>
-    
-    <div class="asst-grid-3">
-      <div class="asst-card">
-        <div class="asst-card-title">Health Factor Projection</div>
-        <div class="asst-card-val" style="color:var(--success);">${fmtHf(currentHf)} ➔ ${typeof futureHf === 'number' ? futureHf.toFixed(4) : futureHf}</div>
-        <div class="asst-card-sub">+${((targetHf - (currentHf || 1.0)) * 100).toFixed(1)}% safe buffer above liquidation (1.00)</div>
-      </div>
-      
-      <div class="asst-card">
-        <div class="asst-card-title">Debt Reduction</div>
-        <div class="asst-card-val" style="color:var(--text-primary);">$${currentDebt.toLocaleString('en-US', {maximumFractionDigits:0})} ➔ $${futureDebt.toLocaleString('en-US', {maximumFractionDigits:0})}</div>
-        <div class="asst-card-sub">-$${repayUsd.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} USDC flash-repaid</div>
-      </div>
-      
-      <div class="asst-card">
-        <div class="asst-card-title">Collateral Retained</div>
-        <div class="asst-card-val" style="color:var(--text-primary);">$${currentCollat.toLocaleString('en-US', {maximumFractionDigits:0})} ➔ $${futureCollat.toLocaleString('en-US', {maximumFractionDigits:0})}</div>
-        <div class="asst-card-sub">${((futureCollat / (currentCollat || 1)) * 100).toFixed(1)}% of original collateral preserved</div>
-      </div>
+  el.innerHTML = `
+    <div class="fc-summary">
+      <div class="fc-summary-title">Repay ${repayUsd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDC
+        sourced from ${collatSymbol}, restoring health factor to ${targetHf.toFixed(4)}.</div>
+      <span class="badge badge-safe">Viable</span>
     </div>
 
-    <!-- Comparative Table -->
-    <div class="asst-table-wrap">
-      <table class="asst-table">
-        <thead>
-          <tr>
-            <th>Metric</th>
-            <th>Current (At-Risk)</th>
-            <th>Post-Rescue (Forecast)</th>
-            <th>Delta / Impact</th>
-          </tr>
-        </thead>
+    <div class="fc-table-wrap">
+      <table class="fc-table">
+        <thead><tr><th>Metric</th><th>Current</th><th>After rescue</th><th>Change</th></tr></thead>
         <tbody>
-          <tr>
-            <td><strong>Health Factor</strong></td>
-            <td class="mono" style="color:${currentHf <= 1.15 ? 'var(--danger)' : 'var(--text-primary)'};">${fmtHf(currentHf)}</td>
-            <td class="mono" style="color:var(--success); font-weight:700;">${typeof futureHf === 'number' ? futureHf.toFixed(4) : futureHf}</td>
-            <td class="mono" style="color:var(--success);">RESTORED (+${((targetHf - (currentHf || 1.0)) * 100).toFixed(1)}%)</td>
-          </tr>
-          <tr>
-            <td><strong>Outstanding Debt</strong></td>
-            <td class="mono">$${currentDebt.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
-            <td class="mono">$${futureDebt.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
-            <td class="mono" style="color:var(--success);">-$${repayUsd.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} (-${((repayUsd / currentDebt) * 100).toFixed(1)}%)</td>
-          </tr>
-          <tr>
-            <td><strong>Supplied Collateral</strong></td>
-            <td class="mono">$${currentCollat.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
-            <td class="mono">$${futureCollat.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
-            <td class="mono">-$${collatSpent.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} (${collatSymbol})</td>
-          </tr>
-          <tr>
-            <td><strong>Net Protected Equity</strong></td>
-            <td class="mono">$${currentEquity.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
-            <td class="mono">$${futureEquity.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
-            <td class="mono" style="color:var(--success); font-weight:600;">$${futureEquity.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} Protected</td>
-          </tr>
-          <tr>
-            <td><strong>Liquidation Penalty Avoided</strong></td>
-            <td class="mono" style="color:var(--danger);">-$${penaltyAvoided.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} (Risk)</td>
-            <td class="mono" style="color:var(--success);">$0.00 (Immune)</td>
-            <td class="mono" style="color:var(--success); font-weight:700;">+$${penaltyAvoided.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} SAVED</td>
-          </tr>
+          ${row("Health factor", fmtHf(currentHf), targetHf.toFixed(4),
+                `+${((targetHf - (currentHf || 1)) * 100).toFixed(1)}%`)}
+          ${row("Outstanding debt", fmtUsd(currentDebt), fmtUsd(futureDebt),
+                `−${fmtUsd(repayUsd)}`)}
+          ${row("Supplied collateral", fmtUsd(currentCollat), fmtUsd(futureCollat),
+                `−${fmtUsd(collatSpent)}`)}
+          ${row("Net equity", fmtUsd(currentEquity), fmtUsd(futureEquity),
+                `−${fmtUsd(interventionCost)}`)}
         </tbody>
       </table>
     </div>
+    <p class="fc-note">Intervention cost ${fmtUsd(interventionCost)} at ${estCostBps} bps —
+      within the borrower's signed bound. Figures are read from
+      <span class="mono">AssessmentResponse</span>; the liquidation penalty this avoids is
+      per-reserve and is not exposed on that response, so it is deliberately not shown here.</p>
 
-    <!-- 2. Step-by-Step Autonomous Rescue Plan -->
-    <div class="asst-section-title">⚡ Step-by-Step Autonomous Rescue Plan</div>
-    
-    <div class="asst-plan-list">
-      <div class="asst-plan-step">
-        <div class="asst-plan-num">01</div>
-        <div class="asst-plan-content">
-          <div class="asst-plan-main">Flash Loan Acquisition</div>
-          <div class="asst-plan-sub">Borrow <span class="mono" style="color:var(--text-primary);">$${repayUsd.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} USDC</span> from Aave V3 flash pool (0% upfront capital required).</div>
-        </div>
+    <div class="fc-steps">
+      <div class="fc-step">
+        <span class="fc-step-num">01</span>
+        <div><div class="fc-step-main">Flash loan</div>
+          <div class="fc-step-sub">Borrow ${fmtUsd(repayUsd)} USDC from the Aave V3 flash pool. No upfront capital.</div></div>
       </div>
-      
-      <div class="asst-plan-step">
-        <div class="asst-plan-num">02</div>
-        <div class="asst-plan-content">
-          <div class="asst-plan-main">Atomic Debt Repayment</div>
-          <div class="asst-plan-sub">Repay <span class="mono" style="color:var(--text-primary);">$${repayUsd.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} USDC</span> of borrower debt to push Health Factor directly to target <span class="mono" style="color:var(--success); font-weight:600;">${targetHf.toFixed(4)}</span>.</div>
-        </div>
+      <div class="fc-step">
+        <span class="fc-step-num">02</span>
+        <div><div class="fc-step-main">Debt repayment</div>
+          <div class="fc-step-sub">Repay ${fmtUsd(repayUsd)} of borrower debt, lifting health factor to ${targetHf.toFixed(4)}.</div></div>
       </div>
-      
-      <div class="asst-plan-step">
-        <div class="asst-plan-num">03</div>
-        <div class="asst-plan-content">
-          <div class="asst-plan-main">Collateral Withdrawal & Swap</div>
-          <div class="asst-plan-sub">Withdraw <span class="mono" style="color:var(--text-primary);">$${collatSpent.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</span> of ${collatSymbol} collateral and execute Uniswap V3 swap with strictly capped slippage (estimated cost: <span class="mono">${estCostBps} bps</span>).</div>
-        </div>
+      <div class="fc-step">
+        <span class="fc-step-num">03</span>
+        <div><div class="fc-step-main">Collateral withdrawal and swap</div>
+          <div class="fc-step-sub">Withdraw ${fmtUsd(collatSpent)} of ${collatSymbol} and swap on Uniswap V3 under the signed slippage cap (${estCostBps} bps estimated).</div></div>
       </div>
-      
-      <div class="asst-plan-step">
-        <div class="asst-plan-num">04</div>
-        <div class="asst-plan-content">
-          <div class="asst-plan-main">Flash Loan Settlement & HealthGuard Invariant Verification</div>
-          <div class="asst-plan-sub">Repay Aave flash loan principal + 0.05% fee. Smart contract enforces Multi-Invariant HealthGuard (<code class="mono">HF_after >= ${targetHf.toFixed(4)}</code> and <code class="mono">Debt_after < Debt_before</code>).</div>
-        </div>
+      <div class="fc-step">
+        <span class="fc-step-num">04</span>
+        <div><div class="fc-step-main">Settlement and HealthGuard</div>
+          <div class="fc-step-sub">Repay flash principal plus premium. The vault enforces HF ≥ ${targetHf.toFixed(4)} and debt strictly reduced, or the whole transaction reverts.</div></div>
       </div>
-    </div>
+    </div>`;
+}
 
-    <!-- Financial Benefit Callout -->
-    <div class="asst-callout">
-      <div>
-        <strong>Net Economic Benefit to Borrower:</strong>
-        <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">
-          Liquidation Penalty Saved ($${penaltyAvoided.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}) minus Intervention Cost ($${interventionCost.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})})
-        </div>
-      </div>
-      <div class="asst-callout-val">+$${netBenefit.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} SAVED</div>
-    </div>
-  `;
+
+// ══════════════════════════════════════════════════════════════════════
+//  AGENT LAYER (FR-18…FR-22)
+//
+//  The agent orchestrates and explains; it never produces a number that
+//  reaches a transaction. Two rules govern everything below:
+//
+//    1. Every figure rendered here is read from a structured field the
+//       BACKEND built — `proposal.facts.*`, `reply.facts`, `gate.checks`.
+//       Model prose (`rationale`, `reply`) is displayed as prose and is
+//       never parsed for a value. This is the same contract the rest of
+//       this file already holds itself to.
+//    2. A reply the backend's NumberGuard flagged is rendered in a
+//       deliberately degraded style — never in the visual language of a
+//       live metric card.
+// ══════════════════════════════════════════════════════════════════════
+
+// All agent content is backend- or model-authored text. It goes through
+// this before it ever touches innerHTML.
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
+  );
+}
+
+// A route is unavailable when the layer is off. Surface the backend's own
+// reason rather than a generic failure.
+async function agentFetch(path, options) {
+  const res = await fetch(`${API_BASE}/agent${path}`, options);
+  let data = null;
+  try { data = await res.json(); } catch (_) { /* empty body */ }
+  if (!res.ok) {
+    const d = data && data.detail;
+    const msg = typeof d === "string" ? d : d ? JSON.stringify(d) : `HTTP ${res.status}`;
+    const err = new Error(msg);
+    err.status = res.status;
+    err.detail = d;
+    throw err;
+  }
+  return data;
+}
+
+// ── GET /agent/status ────────────────────────────────────────────────
+// Always 200 by contract, including when the layer is disabled.
+async function pollAgentStatus() {
+  try {
+    const data = await agentFetch("/status");
+    state.agent.status = data;
+  } catch (err) {
+    state.agent.status = { enabled: false, reason: "Backend unreachable: " + err.message };
+  }
+  renderAgentStatus();
+  return state.agent.status;
+}
+
+function renderAgentStatus() {
+  const st = state.agent.status;
+  const bar = document.getElementById("agent-status-bar");
+  const workspace = document.getElementById("agent-workspace");
+  const disabled = document.getElementById("agent-disabled-panel");
+  if (!st) return;
+
+  const chips = [
+    `<span class="badge ${st.enabled ? "badge-safe" : "badge-warn"}">${st.enabled ? "Agent enabled" : "Agent disabled"}</span>`,
+    `<span class="chip">Model ${esc(st.model || "—")}</span>`,
+    `<span class="chip">Stack ${st.stack_available ? "Installed" : "Missing"}</span>`,
+    `<span class="chip">Store ${st.store_ready ? "Ready" : "—"}</span>`,
+    `<span class="chip">${st.pending_proposals ?? 0} Pending</span>`,
+  ];
+  bar.innerHTML = chips.join("");
+
+  workspace.style.display = st.enabled ? "block" : "none";
+  disabled.style.display = st.enabled ? "none" : "block";
+  if (!st.enabled) {
+    document.getElementById("agent-disabled-reason").textContent =
+      st.reason || "The agent layer is not enabled on this backend.";
+  }
+}
+
+// Entering the view: status first, then the three lists if it is live.
+async function refreshAgentView() {
+  const st = await pollAgentStatus();
+  if (!st || !st.enabled) return;
+  loadAgentInbox();
+  loadTuning();
+  loadAgentAudit();
+}
+
+// ── POST /agent/chat ─────────────────────────────────────────────────
+async function sendChat() {
+  if (state.agent.sending) return;
+  const input = document.getElementById("agent-chat-input");
+  const message = input.value.trim();
+  if (!message) return;
+
+  appendChatMessage({ role: "user", text: message });
+  input.value = "";
+
+  const btn = document.getElementById("agent-chat-send");
+  state.agent.sending = true;
+  btn.disabled = true;
+  btn.textContent = "Thinking…";
+  const pending = appendChatMessage({ role: "assistant", text: "…", pending: true });
+
+  try {
+    const body = { message };
+    if (state.agent.threadId) body.thread_id = state.agent.threadId;
+    if (state.borrower) body.borrower = state.borrower;
+
+    const reply = await agentFetch("/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    state.agent.threadId = reply.thread_id;
+    pending.remove();
+    appendChatMessage({
+      role: "assistant",
+      text: reply.reply,
+      toolCalls: reply.tool_calls,
+      sources: reply.sources,
+      guardFlagged: reply.guard_flagged,
+      truncated: reply.truncated,
+    });
+  } catch (err) {
+    pending.remove();
+    appendChatMessage({ role: "error", text: err.message });
+    toast("error", "POST /agent/chat failed: " + err.message);
+  } finally {
+    state.agent.sending = false;
+    btn.disabled = false;
+    btn.textContent = "Send";
+  }
+}
+
+function appendChatMessage(msg) {
+  const log = document.getElementById("agent-chat-log");
+  const el = document.createElement("div");
+
+  // A guard-flagged reply carries a number the backend could not trace to a
+  // tool result. It is shown - suppressing it would hide what the model said -
+  // but never in the styling reserved for verified data.
+  const flagged = !!msg.guardFlagged;
+  el.className = [
+    "agent-msg",
+    `agent-msg-${msg.role}`,
+    flagged ? "unsourced" : "",
+    msg.pending ? "pending" : "",
+  ].filter(Boolean).join(" ");
+
+  let html = "";
+  if (flagged) {
+    html += `<div class="agent-guard-banner">Unverified — a figure in this reply could not be traced
+             to a tool result. Treat it as prose, not data; check the live panels instead.</div>`;
+  }
+  html += `<div class="agent-msg-body">${esc(msg.text)}</div>`;
+
+  if (msg.truncated) {
+    html += `<div class="agent-msg-note">Tool loop hit its cap before the model finished — this answer may be incomplete.</div>`;
+  }
+
+  if (msg.toolCalls && msg.toolCalls.length) {
+    const rows = msg.toolCalls.map((t) =>
+      `<li><span class="mono">${esc(t.name)}</span>
+       <span class="badge ${t.ok ? "badge-safe" : "badge-danger"}">${t.ok ? "OK" : "Err"}</span>
+       <span class="muted mono">${t.latency_ms ?? 0}ms</span>
+       ${t.error ? `<span class="muted">${esc(t.error)}</span>` : ""}</li>`
+    ).join("");
+    html += `<details class="agent-sources"><summary>Tools called (${msg.toolCalls.length})</summary>
+             <ul class="agent-tool-list">${rows}</ul></details>`;
+  }
+  html += sourcesFooter(msg.sources);
 
   el.innerHTML = html;
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
+  return el;
+}
+
+// Provenance footer. `sources` is a list on ChatReply and a field -> backend
+// field map on FactSheet; render either without inventing entries.
+function sourcesFooter(sources) {
+  if (!sources) return "";
+  const entries = Array.isArray(sources)
+    ? sources.map((s) => `<li class="mono">${esc(s)}</li>`)
+    : Object.entries(sources).map(([k, v]) => `<li><span class="mono">${esc(k)}</span> ← <span class="mono">${esc(v)}</span></li>`);
+  if (!entries.length) return "";
+  return `<details class="agent-sources"><summary>Sources (${entries.length})</summary>
+          <ul class="agent-source-list">${entries.join("")}</ul></details>`;
+}
+
+async function clearChat() {
+  const log = document.getElementById("agent-chat-log");
+  const tid = state.agent.threadId;
+  log.innerHTML = "";
+  state.agent.threadId = null;
+  if (!tid) return;
+  try {
+    await agentFetch(`/chat/${tid}`, { method: "DELETE" });
+  } catch (err) {
+    toast("error", "Could not clear the thread server-side: " + err.message);
+  }
+}
+
+// ── POST /agent/crew/run ─────────────────────────────────────────────
+async function runCrew() {
+  const addr = state.borrower || document.getElementById("borrower-input").value.trim();
+  if (!addr.startsWith("0x") || addr.length !== 42) {
+    toast("error", "Load a valid borrower address in the top bar first.");
+    return;
+  }
+  const btn = document.getElementById("btn-crew-run");
+  btn.disabled = true;
+  btn.textContent = "Running crew…";
+  try {
+    const result = await agentFetch("/crew/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ borrower: addr, trigger: "manual" }),
+    });
+    const outcome = {
+      proposed: "ok", tuning_suggested: "ok",
+      no_action: "info", gate_blocked: "info", error: "error",
+    }[result.terminal] || "info";
+    toast(outcome, `Crew: ${result.terminal} (strategy "${result.strategy}")`);
+    loadAgentInbox();
+    loadTuning();
+    loadAgentAudit();
+    pollAgentStatus();
+  } catch (err) {
+    toast("error", "POST /agent/crew/run failed: " + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Run crew";
+  }
+}
+
+// ── GET /agent/proposals ─────────────────────────────────────────────
+async function loadAgentInbox() {
+  const box = document.getElementById("agent-inbox");
+  try {
+    const rows = await agentFetch("/proposals?limit=20");
+    state.agent.proposals = rows;
+    box.innerHTML = rows.length
+      ? rows.map(renderProposalCard).join("")
+      : `<p class="muted">No proposals yet. Run the crew for a registered borrower to produce one.</p>`;
+  } catch (err) {
+    box.innerHTML = `<p class="muted">Could not load proposals: ${esc(err.message)}</p>`;
+  }
+}
+
+const PROPOSAL_BADGE = {
+  PENDING: "badge-warn", APPROVED: "badge-warn", EXECUTED: "badge-safe",
+  REJECTED: "", FAILED: "badge-danger", STALE: "badge-danger", EXPIRED: "",
+};
+
+function renderProposalCard(p) {
+  const f = p.facts || {};
+  const gate = p.gate || { checks: [], allowed: false, blocking: [] };
+  const passed = gate.checks.filter((c) => c.passed).length;
+
+  // Every figure below is a structured backend field. None is parsed out of
+  // `p.rationale`, which is model prose and is rendered as prose only.
+  const facts = [
+    ["Health factor", f.hf !== undefined ? fmtHf(f.hf) : "—"],
+    ["Target HF", f.hf_target !== undefined ? f.hf_target.toFixed(4) : "—"],
+    ["Trigger", f.hf_trigger_bps !== undefined ? (f.hf_trigger_bps / 10000).toFixed(4) : "—"],
+    ["Repay amount", f.repay_amount_human ? `${esc(f.repay_amount_human)} USDC` : "—"],
+    ["Collateral", esc(f.collateral_symbol || "—")],
+    ["Est. cost", f.est_cost_bps !== undefined ? `${f.est_cost_bps} bps` : "—"],
+    ["Viable", f.viable === undefined ? "—" : f.viable ? "Yes" : "NO"],
+    ["Volatility σ", f.sigma !== undefined ? f.sigma.toFixed(6) : "—"],
+    ["Breach probability", f.breach_probability !== undefined ? `${(f.breach_probability * 100).toFixed(2)}%` : "—"],
+    ["Collateral (USD)", f.collateral_usd !== undefined ? fmtUsd(f.collateral_usd) : "—"],
+    ["Debt (USD)", f.debt_usd !== undefined ? fmtUsd(f.debt_usd) : "—"],
+    ["Position state", esc(f.state || "—")],
+  ];
+
+  const checkRows = gate.checks.map((c) =>
+    `<div class="gate-check ${c.passed ? "pass" : "fail"}">
+       <span class="gate-check-mark">${c.passed ? "Pass" : "Fail"}</span>
+       <span class="gate-check-name mono">${esc(c.name)}</span>
+       <span class="gate-check-detail">${esc(c.detail)}</span>
+     </div>`
+  ).join("");
+
+  const pending = p.status === "Pending";
+  const actions = pending
+    ? `<div class="btn-row">
+         <button class="btn btn-primary btn-sm" onclick="approveProposal(${p.id})">Approve and execute</button>
+         <button class="btn btn-ghost btn-sm" onclick="rejectProposal(${p.id})">Reject</button>
+       </div>`
+    : "";
+
+  const expires = p.expires_at ? new Date(p.expires_at * 1000).toLocaleTimeString() : "—";
+
+  return `
+    <div class="proposal-card ${p.guard_flagged ? "unsourced" : ""}" id="proposal-${p.id}">
+      <div class="proposal-head">
+        <div>
+          <span class="proposal-id mono">#${p.id}</span>
+          <span class="badge ${PROPOSAL_BADGE[p.status] || ""}">${esc(p.status)}</span>
+          <span class="badge">${esc(p.strategy)}</span>
+        </div>
+        <div class="proposal-meta mono">${esc(short(p.borrower))} · expires ${esc(expires)}</div>
+      </div>
+
+      ${p.guard_flagged ? `<div class="agent-guard-banner">Unverified prose — a figure in the rationale below could not be traced to a tool result. The table and checklist are backend data and are unaffected.</div>` : ""}
+
+      <div class="proposal-rationale">${esc(p.rationale || "")}</div>
+
+      <div class="proposal-facts">
+        ${facts.map(([k, v]) => `<div class="proposal-fact"><span class="proposal-fact-k">${k}</span><span class="proposal-fact-v mono">${v}</span></div>`).join("")}
+      </div>
+
+      <div class="gate-head">
+        <span class="gate-title">Policy gate</span>
+        <span class="badge ${gate.allowed ? "badge-safe" : "badge-danger"}">${gate.allowed ? "Allowed" : "Blocked"}</span>
+        <span class="muted mono">${passed}/${gate.checks.length} checks passed${gate.severity ? " · " + esc(gate.severity) : ""}</span>
+      </div>
+      <div class="gate-checks">${checkRows}</div>
+
+      ${p.tx_hash ? `<div class="proposal-tx mono">tx ${esc(p.tx_hash)}</div>` : ""}
+      ${p.decision_note ? `<div class="muted">Note: ${esc(p.decision_note)}</div>` : ""}
+      ${sourcesFooter(f.sources)}
+      ${actions}
+    </div>`;
+}
+
+// ── POST /agent/proposals/{id}/approve ───────────────────────────────
+// The only path in this console that can reach a transaction, and it goes
+// through a human clicking here. The backend re-runs the gate on a freshly
+// re-fetched assessment before it calls protect().
+async function approveProposal(id) {
+  const who = window.prompt("Approving executes a real protection transaction.\nEnter your operator name to confirm:");
+  if (!who) return;
+  try {
+    const result = await agentFetch(`/proposals/${id}/approve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approved_by: who }),
+    });
+    const pr = result.protect;
+    toast(pr && pr.submitted ? "ok" : "error",
+      pr && pr.submitted
+        ? `Executed. State ${pr.state}, tx ${pr.tx_hash || "—"}`
+        : `Approved but not submitted: ${(pr && pr.reason) || result.reason || "see the proposal"}`);
+  } catch (err) {
+    // A 409 carries the re-validated gate's failed checks - the most useful
+    // thing to show, since it names exactly which safety check now fails.
+    const d = err.detail;
+    if (err.status === 409 && d && d.checks) {
+      const names = d.checks.map((c) => c.name).join(", ");
+      toast("error", `Refused — the position moved. Now failing: ${names}`);
+    } else {
+      toast("error", `Approve failed: ${err.message}`);
+    }
+  } finally {
+    loadAgentInbox();
+    loadAgentAudit();
+    pollAgentStatus();
+    pollMetrics();
+  }
+}
+
+async function rejectProposal(id) {
+  const who = window.prompt("Enter your operator name to reject this proposal:");
+  if (!who) return;
+  try {
+    await agentFetch(`/proposals/${id}/reject`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rejected_by: who }),
+    });
+    toast("ok", `Proposal #${id} rejected. Nothing was submitted.`);
+  } catch (err) {
+    toast("error", `Reject failed: ${err.message}`);
+  } finally {
+    loadAgentInbox();
+    loadAgentAudit();
+    pollAgentStatus();
+  }
+}
+
+// ── GET /agent/tuning ────────────────────────────────────────────────
+async function loadTuning() {
+  const box = document.getElementById("agent-tuning");
+  try {
+    const rows = await agentFetch("/tuning?limit=20");
+    state.agent.tuning = rows;
+    box.innerHTML = rows.length
+      ? rows.map(renderTuningCard).join("")
+      : `<p class="muted">No open tuning suggestions.</p>`;
+  } catch (err) {
+    box.innerHTML = `<p class="muted">Could not load tuning suggestions: ${esc(err.message)}</p>`;
+  }
+}
+
+function renderTuningCard(t) {
+  return `
+    <div class="proposal-card tuning-card">
+      <div class="proposal-head">
+        <div>
+          <span class="proposal-id mono">#${t.id}</span>
+          <span class="badge badge-warn">${esc(t.status)}</span>
+          <span class="badge">Needs borrower signature</span>
+        </div>
+        <div class="proposal-meta mono">${esc(short(t.borrower))}</div>
+      </div>
+      <div class="proposal-facts">
+        <div class="proposal-fact"><span class="proposal-fact-k">Field</span><span class="proposal-fact-v mono">${esc(t.field_name)}</span></div>
+        <div class="proposal-fact"><span class="proposal-fact-k">Current</span><span class="proposal-fact-v mono">${t.current_value}</span></div>
+        <div class="proposal-fact"><span class="proposal-fact-k">Suggested</span><span class="proposal-fact-v mono">${t.suggested_value}</span></div>
+      </div>
+      <div class="proposal-rationale">${esc(t.rationale || "")}</div>
+      <details class="agent-sources">
+        <summary>RiskParams the borrower would need to sign</summary>
+        <pre class="mono tuning-payload">${esc(JSON.stringify(t.eip712_payload, null, 2))}</pre>
+      </details>
+      ${t.status === "open" ? `<div class="btn-row"><button class="btn btn-ghost btn-sm" onclick="dismissTuning(${t.id})">Dismiss</button></div>` : ""}
+    </div>`;
+}
+
+async function dismissTuning(id) {
+  try {
+    await agentFetch(`/tuning/${id}/dismiss`, { method: "POST" });
+    toast("ok", `Suggestion #${id} dismissed.`);
+  } catch (err) {
+    toast("error", `Dismiss failed: ${err.message}`);
+  } finally {
+    loadTuning();
+  }
+}
+
+// ── GET /agent/audit ─────────────────────────────────────────────────
+async function loadAgentAudit() {
+  const box = document.getElementById("agent-audit");
+  try {
+    const rows = await agentFetch("/audit?limit=50");
+    state.agent.audit = rows;
+    box.innerHTML = rows.length
+      ? `<div class="agent-audit-wrap"><table class="data-table agent-audit-table"><tbody>${rows.map((r) => `
+          <tr>
+            <td class="mono">${esc(new Date(r.ts * 1000).toLocaleString())}</td>
+            <td><span class="badge">${esc(r.actor)}</span></td>
+            <td class="mono">${esc(r.action)}</td>
+            <td class="mono">${r.borrower ? esc(short(r.borrower)) : "—"}</td>
+            <td class="mono muted">${r.proposal_id ? "#" + r.proposal_id : ""}</td>
+          </tr>`).join("")}</tbody></table></div>`
+      : `<p class="muted">Audit trail is empty.</p>`;
+  } catch (err) {
+    box.innerHTML = `<p class="muted">Could not load the audit trail: ${esc(err.message)}</p>`;
+  }
+}
+
+// ── POST /agent/panic ────────────────────────────────────────────────
+// Trips the keeper's own circuit breaker, so it halts autonomous submission
+// too - not merely the agent. POST /breaker/reset (System tab) undoes it.
+async function agentPanic() {
+  if (!window.confirm("Trip the circuit breaker? This halts ALL autonomous protection, not just the agent.")) return;
+  try {
+    const res = await agentFetch("/panic", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: "operator panic from console" }),
+    });
+    toast("ok", `Breaker tripped (${res.trip_reason}). Reset it from the System tab.`);
+  } catch (err) {
+    toast("error", `Panic failed: ${err.message}`);
+  } finally {
+    pollMetrics();
+    loadAgentAudit();
+  }
 }
 
 
