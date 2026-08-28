@@ -35,6 +35,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 from pathlib import Path
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 app = FastAPI(title="Liquidation Shield Keeper", version="0.5.0", lifespan=lifespan)
@@ -46,4 +47,9 @@ app.include_router(routes_metrics.router)
 frontend_dir = Path(__file__).resolve().parent.parent.parent / "frontend"
 if frontend_dir.exists():
     app.mount("/console", StaticFiles(directory=str(frontend_dir), html=True), name="console")
+
+    @app.get("/", include_in_schema=False)
+    async def root_redirect() -> RedirectResponse:
+        return RedirectResponse(url="/console/")
+
 
