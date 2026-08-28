@@ -28,16 +28,20 @@ def _require_match(borrower: str, body: ProtectRequest) -> None:
 async def get_position(borrower: str, service: Service) -> dict[str, object]:
     registered = service.params_of(borrower)
     trigger = registered[0].hf_trigger_bps if registered else 0
-    snap = await service.snapshot(borrower, trigger)
-    return {
-        "borrower": borrower,
-        "state": snap.state.value,
-        "hf": snap.hf,
-        "collateral_usd": snap.account.collateral_usd,
-        "debt_usd": snap.account.debt_usd,
-        "has_debt": snap.account.has_debt,
-        "registered": registered is not None,
-    }
+    try:
+        snap = await service.snapshot(borrower, trigger)
+        return {
+            "borrower": borrower,
+            "state": snap.state.value,
+            "hf": snap.hf,
+            "collateral_usd": snap.account.collateral_usd,
+            "debt_usd": snap.account.debt_usd,
+            "has_debt": snap.account.has_debt,
+            "registered": registered is not None,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Chain RPC error querying borrower state: {exc}") from exc
+
 
 
 @router.get("/{borrower}/assessment", response_model=AssessmentResponse)
