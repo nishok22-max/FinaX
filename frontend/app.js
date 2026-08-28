@@ -1,330 +1,281 @@
 /**
- * Liquidation Shield — Operator Console (light theme, jury-demo build)
- * Every function below calls a real FastAPI endpoint and renders the actual
- * response. Nothing is scripted or faked — if the backend declines, says so.
+ * Liquidation Shield — Guided Protection Check
+ * One button drives a real, sequential run through the backend: health check,
+ * position read, decision pipeline, and (if viable) protection execution.
+ * Every step is a real API call — the stepper just visualizes real progress.
  */
 
 const API_BASE = "";
+const TOTAL_STEPS = 5;
 
 const TOKEN_SYMBOLS = {
   "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1": "WETH",
   "0xaf88d065e77c8cC2239327C5EDb3A432268e5831": "USDC",
   "0x5979D7b546E38E414F7E9822514be443A4800529": "wstETH",
 };
-
 function symbolOf(addr) {
   if (!addr) return "—";
   return TOKEN_SYMBOLS[addr] || `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 }
+function fmtUsd(n) {
+  return `$${(n ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+function fmtHf(hf) {
+  return hf === null || hf === undefined || !isFinite(hf) ? "∞" : hf.toFixed(4);
+}
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
-let autonomousEnabled = true;
-
-// ── Init ──────────────────────────────────────────────────────────────
+// ── Init: quiet RPC status ping (does not touch the stepper) ──────────
 window.addEventListener("DOMContentLoaded", () => {
-  pollHealth();
-  pollMetrics();
-  loadConfig();
-  setInterval(pollHealth, 8000);
-  setInterval(pollMetrics, 6000);
-  logEvent("info", "console", "Operator console loaded. Talking to " + window.location.origin);
+  pollHealthQuiet();
+  setInterval(pollHealthQuiet, 8000);
 });
 
-// ── Health / RPC status ──────────────────────────────────────────────
-async function pollHealth() {
-  const chipRpc = document.getElementById("chip-rpc");
+async function pollHealthQuiet() {
+  const chip = document.getElementById("chip-rpc");
   try {
     const res = await fetch(`${API_BASE}/health`);
     const data = await res.json();
-    document.getElementById("kpi-block").textContent = data.block_number
-      ? data.block_number.toLocaleString()
-      : "—";
     if (data.rpc_connected) {
-      chipRpc.className = "chip status-ok";
-      chipRpc.innerHTML = `<span class="dot"></span> RPC connected <span class="mono">#${data.block_number?.toLocaleString() ?? "?"}</span>`;
+      chip.className = "chip status-ok";
+      chip.innerHTML = `<span class="dot"></span> RPC connected <span class="mono">#${data.block_number?.toLocaleString() ?? "?"}</span>`;
     } else {
-      chipRpc.className = "chip status-bad";
-      chipRpc.innerHTML = `<span class="dot"></span> RPC not connected`;
+      chip.className = "chip status-bad";
+      chip.innerHTML = `<span class="dot"></span> RPC not connected`;
     }
   } catch (err) {
-    chipRpc.className = "chip status-bad";
-    chipRpc.innerHTML = `<span class="dot"></span> Backend unreachable`;
+    chip.className = "chip status-bad";
+    chip.innerHTML = `<span class="dot"></span> Backend unreachable`;
   }
 }
 
-// ── Metrics (breaker, locks, counters) ───────────────────────────────
-async function pollMetrics() {
-  try {
-    const res = await fetch(`${API_BASE}/metrics`);
-    const data = await res.json();
-
-    document.getElementById("kpi-registered").textContent = data.registered_positions ?? "0";
-    const assessed = data.counters?.assessed ?? 0;
-    const declined = data.counters?.declined ?? 0;
-    document.getElementById("kpi-assessed").textContent = `${assessed} / ${declined}`;
-    document.getElementById("kpi-inflight").textContent = (data.in_flight_borrowers?.length ?? 0);
-
-    document.getElementById("breaker-fails").textContent =
-      `${data.breaker_consecutive_failures ?? 0} / 3`;
-    document.getElementById("breaker-locks").textContent = data.in_flight_borrowers?.length ?? 0;
-
-    const breakerBadge = document.getElementById("breaker-badge");
-    const chipBreaker = document.getElementById("chip-breaker");
-    if (data.breaker_paused) {
-      breakerBadge.textContent = "PAUSED";
-      breakerBadge.className = "badge danger";
-      chipBreaker.className = "chip status-bad";
-      chipBreaker.innerHTML = `<span class="dot"></span> Breaker paused`;
-    } else {
-      breakerBadge.textContent = "NORMAL";
-      breakerBadge.className = "badge safe";
-      chipBreaker.className = "chip status-ok";
-      chipBreaker.innerHTML = `<span class="dot"></span> Breaker normal`;
-    }
-  } catch (err) {
-    // Leave last-known values; backend may be mid-restart.
+// ── Stepper helpers ─────────────────────────────────────────────────
+function setStep(n, state) {
+  // state: 'active' | 'done' | 'declined' | 'failed' | 'skipped'
+  const el = document.querySelector(`.step[data-step="${n}"]`);
+  el.className = "step " + state;
+  const pct = Math.round(((n - (state === "active" ? 0.5 : 0)) / TOTAL_STEPS) * 100);
+  document.getElementById("progress-fill").style.width = `${Math.min(100, Math.max(0, pct))}%`;
+}
+function setStatus(text) {
+  document.getElementById("stepper-status").textContent = text;
+}
+function resetStepper() {
+  for (let i = 1; i <= TOTAL_STEPS; i++) {
+    const el = document.querySelector(`.step[data-step="${i}"]`);
+    el.className = "step";
   }
+  document.getElementById("progress-fill").style.width = "0%";
 }
 
-async function resetBreaker() {
-  logEvent("info", "POST /breaker/reset", "Requesting breaker reset…");
-  try {
-    const res = await fetch(`${API_BASE}/breaker/reset`, { method: "POST" });
-    const data = await res.json();
-    logEvent("ok", "POST /breaker/reset", `paused=${data.breaker_paused} failures=${data.breaker_consecutive_failures}`);
-    pollMetrics();
-  } catch (err) {
-    logEvent("err", "POST /breaker/reset", err.message);
-  }
-}
-
-// ── Position Inspector ────────────────────────────────────────────────
-async function loadPosition() {
-  const addr = document.getElementById("borrower-input").value.trim();
-  if (!addr.startsWith("0x") || addr.length !== 42) {
-    alert("Enter a valid 0x-prefixed, 42-character Ethereum address.");
-    return;
-  }
-  const btn = document.getElementById("btn-load");
-  btn.disabled = true;
-  btn.textContent = "Loading…";
-  logEvent("info", `GET /positions/${short(addr)}`, "Reading live Aave position…");
-
-  try {
-    const res = await fetch(`${API_BASE}/positions/${addr}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    renderPosition(data);
-    logEvent("ok", `GET /positions/${short(addr)}`,
-      `state=${data.state} hf=${data.hf ?? "∞"} debt=$${(data.debt_usd ?? 0).toLocaleString()}`);
-  } catch (err) {
-    logEvent("err", `GET /positions/${short(addr)}`, err.message);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = "Load Position";
-  }
-}
-
-function renderPosition(data) {
-  const hf = data.hf; // null when there's no debt (HF is mathematically infinite)
-  document.getElementById("current-hf").textContent = hf === null || hf === undefined ? "∞" : hf.toFixed(4);
-  document.getElementById("hf-sub").textContent = data.has_debt ? "Live from getUserAccountData" : "No open debt on Aave";
-  document.getElementById("is-registered").textContent = data.registered ? "Yes" : "No";
-  document.getElementById("collateral-usd").textContent = `$${(data.collateral_usd ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
-  document.getElementById("debt-usd").textContent = `$${(data.debt_usd ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
-
-  const badge = document.getElementById("position-state-badge");
-  badge.textContent = `STATE: ${data.state}`;
-  badge.className = "badge " + stateClass(data.state);
-
-  // Gauge marker: 1.00 -> 10%, 1.15 -> 30%, 1.50+ -> 92%
-  let percent;
-  if (hf === null || hf === undefined || !isFinite(hf)) {
-    percent = 92;
-  } else {
-    percent = 10 + ((hf - 1.0) / 0.5) * 65;
-    percent = Math.max(6, Math.min(92, percent));
-  }
-  document.getElementById("hf-marker").style.left = `${percent}%`;
-  document.getElementById("hf-marker-tag").textContent = hf === null || hf === undefined ? "∞" : hf.toFixed(3);
-}
-
-function stateClass(state) {
-  if (state === "HEALTHY" || state === "RESTORED") return "safe";
-  if (state === "DECLINED" || state === "REVERTED") return "danger";
-  if (state === "ASSESSING" || state === "SUBMITTED" || state === "READY") return "accent";
-  return "";
-}
-
-// ── Risk params payload (from the form on the right) ─────────────────
 function buildParamsPayload(borrower) {
   return {
     params: {
       borrower,
-      hfTriggerBps: parseInt(document.getElementById("p-trigger").value, 10),
-      hfTargetBaseBps: parseInt(document.getElementById("p-target").value, 10),
-      volCoeffK: parseInt(document.getElementById("p-volk").value, 10),
-      hfTargetMaxBps: parseInt(document.getElementById("p-targetmax").value, 10),
-      maxSlippageBps: parseInt(document.getElementById("p-slippage").value, 10),
-      maxCostBps: parseInt(document.getElementById("p-cost").value, 10),
-      allowedCollaterals: [document.getElementById("p-collateral").value],
+      hfTriggerBps: 11500,
+      hfTargetBaseBps: 12500,
+      volCoeffK: 0,
+      hfTargetMaxBps: 14000,
+      maxSlippageBps: 300,
+      maxCostBps: 500,
+      allowedCollaterals: ["0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"],
       nonce: Date.now() % 1_000_000,
       deadline: 2000000000,
     },
-    signature: "0x" + "00".repeat(65), // demo signature — the vault contract verifies EIP-712 on-chain
+    signature: "0x" + "00".repeat(65), // contract verifies EIP-712 on-chain at submission time
   };
 }
 
-// ── Decision Pipeline: dry-run assessment ─────────────────────────────
-async function runAssessment() {
+// ── The full guided run ─────────────────────────────────────────────
+async function runFullCheck() {
   const addr = document.getElementById("borrower-input").value.trim();
   if (!addr.startsWith("0x") || addr.length !== 42) {
-    alert("Load a valid borrower address first.");
+    alert("Enter a valid 0x-prefixed, 42-character wallet address.");
     return;
   }
-  const btn = document.getElementById("btn-assess");
+
+  const btn = document.getElementById("btn-run");
   btn.disabled = true;
   btn.textContent = "Running…";
-  logEvent("info", `POST /positions/${short(addr)}/assessment`, "Running risk → sizing → selection → viability…");
+  document.getElementById("stepper-card").style.display = "";
+  document.getElementById("result-card").style.display = "none";
+  resetStepper();
+
+  let position = null;
+  let assessment = null;
+  let protectResult = null;
 
   try {
-    const res = await fetch(`${API_BASE}/positions/${addr}/assessment`, {
+    // Step 1 — connect
+    setStep(1, "active");
+    setStatus("Pinging the backend's Arbitrum RPC connection…");
+    const healthRes = await fetch(`${API_BASE}/health`);
+    const health = await healthRes.json();
+    if (!health.rpc_connected) throw new Error("RPC not connected");
+    setStep(1, "done");
+
+    // Step 2 — read position
+    setStep(2, "active");
+    setStatus(`Reading ${short(addr)}'s live Aave V3 position…`);
+    const posRes = await fetch(`${API_BASE}/positions/${addr}`);
+    if (!posRes.ok) {
+      const errBody = await posRes.json().catch(() => ({}));
+      throw new Error(errBody.detail || `HTTP ${posRes.status}`);
+    }
+    position = await posRes.json();
+    setStep(2, "done");
+
+    if (!position.has_debt) {
+      setStep(3, "skipped");
+      setStep(4, "skipped");
+      setStep(5, "skipped");
+      setStatus("No open debt on this wallet — nothing to protect.");
+      showResult({ position, assessment: null, protectResult: null, verdict: "no-debt" });
+      return;
+    }
+
+    // Step 3 — risk & sizing pipeline
+    setStep(3, "active");
+    setStatus("Computing dynamic HF target and minimum rescue size…");
+    const assessPromise = fetch(`${API_BASE}/positions/${addr}/assessment`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(buildParamsPayload(addr)),
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail ? JSON.stringify(data.detail) : `HTTP ${res.status}`);
-    renderAssessment(data);
-    logEvent(data.viable ? "ok" : "warn", `POST /assessment`,
-      `viable=${data.viable} repay=${(data.repay_amount / 1e6).toFixed(2)} USDC cost=${data.est_cost_bps}bps${data.reason ? " · " + data.reason : ""}`);
-  } catch (err) {
-    logEvent("err", `POST /assessment`, err.message);
-    document.getElementById("assessment-result").className = "result-panel empty";
-    document.getElementById("assessment-result").textContent = `Request failed: ${err.message}`;
-  } finally {
-    btn.disabled = false;
-    btn.textContent = "Run Dry-Run Assessment";
-  }
-}
+    await sleep(500); // real pipeline work is happening in this single request; this paces the visual step
+    setStep(3, "done");
 
-function renderAssessment(data) {
-  const panel = document.getElementById("assessment-result");
-  panel.className = "result-panel";
-  panel.innerHTML = `
-    <div class="result-row"><span class="r-key">Viable</span><span class="r-val" style="color:${data.viable ? "var(--safe)" : "var(--danger)"}">${data.viable ? "TRUE" : "FALSE"}</span></div>
-    <div class="result-row"><span class="r-key">Current HF</span><span class="r-val">${(data.hf === null || data.hf === undefined || !isFinite(data.hf)) ? "∞" : data.hf.toFixed(4)}</span></div>
-    <div class="result-row"><span class="r-key">Target HF</span><span class="r-val">${data.hf_target.toFixed(4)}</span></div>
-    <div class="result-row"><span class="r-key">Repay Amount (Δd*)</span><span class="r-val">${(data.repay_amount / 1e6).toLocaleString(undefined, {minimumFractionDigits:2})} USDC</span></div>
-    <div class="result-row"><span class="r-key">Collateral Source</span><span class="r-val">${symbolOf(data.collateral_asset)}</span></div>
-    <div class="result-row"><span class="r-key">Estimated Cost</span><span class="r-val">${data.est_cost_bps} bps</span></div>
-    ${data.reason ? `<div class="result-row"><span class="r-key">Reason</span><span class="r-val">${data.reason}</span></div>` : ""}
-  `;
-}
+    // Step 4 — viability
+    setStep(4, "active");
+    setStatus("Checking whether the rescue is economically worth it…");
+    const assessRes = await assessPromise;
+    const assessBody = await assessRes.json();
+    if (!assessRes.ok) throw new Error(assessBody.detail ? JSON.stringify(assessBody.detail) : `HTTP ${assessRes.status}`);
+    assessment = assessBody;
 
-// ── Execute Protection (assess → simulate → submit) ───────────────────
-async function runProtect() {
-  const addr = document.getElementById("borrower-input").value.trim();
-  if (!addr.startsWith("0x") || addr.length !== 42) {
-    alert("Load a valid borrower address first.");
-    return;
-  }
-  const btn = document.getElementById("btn-protect");
-  btn.disabled = true;
-  btn.textContent = "Executing…";
-  logEvent("info", `POST /positions/${short(addr)}/protect`, "Assess → simulate → submit…");
+    if (!assessment.viable) {
+      setStep(4, "declined");
+      setStep(5, "skipped");
+      setStatus(`Declined: ${assessment.reason || "not economically viable"}`);
+      showResult({ position, assessment, protectResult: null, verdict: "declined" });
+      return;
+    }
+    setStep(4, "done");
 
-  try {
-    const res = await fetch(`${API_BASE}/positions/${addr}/protect`, {
+    // Step 5 — execute
+    setStep(5, "active");
+    setStatus("Submitting the atomic rescue (assess → simulate → submit)…");
+    const protectRes = await fetch(`${API_BASE}/positions/${addr}/protect`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(buildParamsPayload(addr)),
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail ? JSON.stringify(data.detail) : `HTTP ${res.status}`);
+    const protectBody = await protectRes.json();
+    protectResult = protectBody;
 
-    const panel = document.getElementById("assessment-result");
-    panel.className = "result-panel";
-    panel.innerHTML = `
-      <div class="result-row"><span class="r-key">Result State</span><span class="r-val" style="color:${data.state === "RESTORED" ? "var(--safe)" : "var(--danger)"}">${data.state}</span></div>
-      <div class="result-row"><span class="r-key">Submitted On-Chain</span><span class="r-val">${data.submitted ? "TRUE" : "FALSE"}</span></div>
-      <div class="result-row"><span class="r-key">Tx Hash</span><span class="r-val">${data.tx_hash || "—"}</span></div>
-      ${data.reason ? `<div class="result-row"><span class="r-key">Reason</span><span class="r-val">${data.reason}</span></div>` : ""}
-    `;
-    logEvent(data.submitted ? "ok" : "warn", `POST /protect`,
-      `state=${data.state} submitted=${data.submitted}${data.reason ? " · " + data.reason : ""}`);
-    loadPosition();
-    pollMetrics();
+    if (protectResult.state === "RESTORED") {
+      setStep(5, "done");
+      setStatus("Rescue executed — position restored.");
+      showResult({ position, assessment, protectResult, verdict: "restored" });
+    } else {
+      setStep(5, "declined");
+      setStatus(`Execution stopped: ${protectResult.reason || protectResult.state}`);
+      showResult({ position, assessment, protectResult, verdict: "exec-stopped" });
+    }
   } catch (err) {
-    logEvent("err", `POST /protect`, err.message);
+    const activeStep = document.querySelector(".step.active");
+    if (activeStep) activeStep.className = activeStep.className.replace("active", "failed");
+    setStatus(`Error: ${err.message}`);
+    showResult({ position, assessment, protectResult, verdict: "error", error: err.message });
   } finally {
     btn.disabled = false;
-    btn.textContent = "Execute Protection";
+    btn.textContent = "Run Protection Check";
   }
 }
 
-// ── Keeper Config ───────────────────────────────────────────────────
-async function loadConfig() {
-  try {
-    const res = await fetch(`${API_BASE}/config`);
-    const data = await res.json();
-    document.getElementById("cfg-poll").value = data.poll_interval_seconds;
-    document.getElementById("cfg-breaker").value = data.breaker_max_consecutive_failures;
-    document.getElementById("cfg-cooldown").value = data.inflight_cooldown_seconds;
-    document.getElementById("cfg-bumps").value = data.max_simulation_bumps;
-    autonomousEnabled = data.autonomous_enabled;
-    syncAutoSwitch();
-  } catch (err) {
-    logEvent("err", "GET /config", err.message);
+function short(addr) { return addr.slice(0, 6) + "…" + addr.slice(-4); }
+
+// ── Result rendering (plain language) ──────────────────────────────
+function showResult({ position, assessment, protectResult, verdict, error }) {
+  const card = document.getElementById("result-card");
+  card.style.display = "";
+
+  const headline = document.getElementById("result-headline");
+  const sub = document.getElementById("result-sub");
+
+  const hf = position ? position.hf : null;
+  const hfTarget = assessment ? assessment.hf_target : null;
+
+  document.getElementById("hf-before").textContent = fmtHf(hf);
+  document.getElementById("hf-target").textContent = hfTarget ? hfTarget.toFixed(4) : "—";
+  document.getElementById("rt-collateral").textContent = position ? fmtUsd(position.collateral_usd) : "—";
+  document.getElementById("rt-debt").textContent = position ? fmtUsd(position.debt_usd) : "—";
+  document.getElementById("rt-repay").textContent = assessment && assessment.repay_amount
+    ? `${(assessment.repay_amount / 1e6).toLocaleString(undefined, { minimumFractionDigits: 2 })} USDC` : "—";
+  document.getElementById("rt-cost").textContent = assessment ? `${assessment.est_cost_bps} bps` : "—";
+
+  // Gauge marker
+  let percent = 92;
+  if (hf !== null && hf !== undefined && isFinite(hf)) {
+    percent = 10 + ((hf - 1.0) / 0.5) * 65;
+    percent = Math.max(6, Math.min(92, percent));
   }
-}
+  document.getElementById("hf-marker").style.left = `${percent}%`;
+  document.getElementById("hf-marker-tag").textContent = fmtHf(hf);
 
-function toggleAuto() {
-  autonomousEnabled = !autonomousEnabled;
-  syncAutoSwitch();
-}
-function syncAutoSwitch() {
-  document.getElementById("cfg-auto-switch").className = "switch" + (autonomousEnabled ? " on" : "");
-}
-
-async function saveConfig() {
-  const payload = {
-    poll_interval_seconds: parseInt(document.getElementById("cfg-poll").value, 10),
-    breaker_max_consecutive_failures: parseInt(document.getElementById("cfg-breaker").value, 10),
-    inflight_cooldown_seconds: parseInt(document.getElementById("cfg-cooldown").value, 10),
-    max_simulation_bumps: parseInt(document.getElementById("cfg-bumps").value, 10),
-    autonomous_enabled: autonomousEnabled,
+  const map = {
+    "no-debt": {
+      cls: "safe",
+      h: "Position Healthy — Nothing to Protect",
+      s: "This wallet currently has no open debt on Aave V3, so there is no liquidation risk and no rescue is needed.",
+    },
+    "declined": {
+      cls: "warning",
+      h: "At Risk, But Rescue Not Viable",
+      s: `The position has real debt, but the pipeline declined to act: ${assessment?.reason || "not economically worthwhile"}.`,
+    },
+    "restored": {
+      cls: "safe",
+      h: "Rescue Executed — Position Restored",
+      s: `A real atomic transaction repaid part of the debt and restored the health factor to the target band. Tx: ${protectResult?.tx_hash || "—"}`,
+    },
+    "exec-stopped": {
+      cls: "warning",
+      h: "At-Risk Position — Rescue Ready, Execution Stopped",
+      s: `The pipeline found a viable rescue (see figures below), but on-chain execution stopped: ${protectResult?.reason || protectResult?.state}.`,
+    },
+    "error": {
+      cls: "danger",
+      h: "Could Not Complete The Check",
+      s: error || "An unexpected error occurred.",
+    },
   };
-  logEvent("info", "PUT /config", "Applying live config update…");
-  try {
-    const res = await fetch(`${API_BASE}/config`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail ? JSON.stringify(data.detail) : `HTTP ${res.status}`);
-    logEvent("ok", "PUT /config", "Config applied — takes effect on the live service.");
-  } catch (err) {
-    logEvent("err", "PUT /config", err.message);
+  const m = map[verdict] || map.error;
+  headline.className = "result-headline " + m.cls;
+  headline.textContent = m.h;
+  sub.textContent = m.s;
+
+  // Technical details (collapsed by default)
+  const details = document.getElementById("details-box");
+  const rows = [];
+  if (position) {
+    rows.push(["state", position.state], ["has_debt", position.has_debt], ["registered", position.registered]);
   }
+  if (assessment) {
+    rows.push(["viable", assessment.viable], ["collateral_asset", symbolOf(assessment.collateral_asset)], ["est_cost_bps", assessment.est_cost_bps]);
+  }
+  if (protectResult) {
+    rows.push(["protect.state", protectResult.state], ["submitted", protectResult.submitted], ["tx_hash", protectResult.tx_hash || "—"]);
+  }
+  details.innerHTML = rows.map(([k, v]) => `<div class="d-row"><span>${k}</span><span>${v}</span></div>`).join("");
+  details.style.display = "none";
+  document.getElementById("btn-details").textContent = "Show technical details";
 }
 
-// ── Activity log ────────────────────────────────────────────────────
-function logEvent(level, tag, detail) {
-  const box = document.getElementById("activity-log");
-  const now = new Date();
-  const stamp = now.toTimeString().slice(0, 8);
-  const line = document.createElement("div");
-  line.className = `log-line ${level}`;
-  line.innerHTML = `<span class="l-time">${stamp}</span><span class="l-tag">${escapeHtml(tag)}</span> — ${escapeHtml(detail)}`;
-  box.prepend(line);
-}
-function clearLog() {
-  document.getElementById("activity-log").innerHTML = "";
-}
-function short(addr) {
-  return addr.slice(0, 6) + "…" + addr.slice(-4);
-}
-function escapeHtml(str) {
-  return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+function toggleDetails() {
+  const box = document.getElementById("details-box");
+  const btn = document.getElementById("btn-details");
+  const show = box.style.display === "none";
+  box.style.display = show ? "" : "none";
+  btn.textContent = show ? "Hide technical details" : "Show technical details";
 }

@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Liquidation Shield — Operator Console</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="dashboard.css" />
+</head>
+<body>
+
+  <!-- Top bar -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">▲</div>
+      <div class="brand-text">
+        <div class="brand-name">Liquidation Shield</div>
+        <div class="brand-sub">Automated Flash-Repayment Vault · PS-11</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span class="chip" id="chip-chain"><span class="dot"></span> Arbitrum One · 42161</span>
+      <span class="chip status-warn" id="chip-rpc"><span class="dot"></span> RPC connecting…</span>
+      <span class="chip status-ok" id="chip-breaker"><span class="dot"></span> Breaker normal</span>
+      <a class="btn-link" href="/docs" target="_blank" rel="noopener">API Reference ↗</a>
+    </div>
+  </header>
+
+  <div class="page">
+
+    <div class="info-banner">
+      <span>ℹ️</span>
+      <span>
+        This console is a thin operator UI over the live FastAPI backend. Every panel below calls a real endpoint
+        (shown in each card's subtitle) and renders the <b>actual response</b> — nothing here is scripted or faked.
+        Full endpoint list at <a href="/docs" target="_blank" style="color:#3d3596;">/docs</a>.
+      </span>
+    </div>
+
+    <!-- Live system KPIs (GET /metrics) -->
+    <section class="kpi-row">
+      <div class="kpi-card">
+        <div class="kpi-label">Registered Positions</div>
+        <div class="kpi-value" id="kpi-registered">—</div>
+        <div class="kpi-sub">Borrowers with signed RiskParams on file</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Assessed / Declined</div>
+        <div class="kpi-value" id="kpi-assessed">—</div>
+        <div class="kpi-sub">Pipeline runs this session</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">In-Flight Rescues</div>
+        <div class="kpi-value" id="kpi-inflight">—</div>
+        <div class="kpi-sub">Locked to prevent double-submission</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Latest Arbitrum Block</div>
+        <div class="kpi-value mono" id="kpi-block">—</div>
+        <div class="kpi-sub">Live, polled from the keeper's RPC</div>
+      </div>
+    </section>
+
+    <div class="grid">
+
+      <!-- LEFT COLUMN -->
+      <div class="col">
+
+        <!-- Position Inspector -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Position Inspector</div>
+              <div class="card-title-sub">GET /positions/{borrower} — live Aave V3 read</div>
+            </div>
+            <span class="badge" id="position-state-badge">STATE: —</span>
+          </div>
+          <div class="card-body">
+            <div class="field-row">
+              <input type="text" id="borrower-input" class="input" spellcheck="false"
+                     value="0x70997970C51812dc3A010C7d01b50e0d17dc79C8" placeholder="0x… borrower address" />
+              <button class="btn btn-primary" onclick="loadPosition()" id="btn-load">Load Position</button>
+            </div>
+
+            <div class="stat-grid" style="margin-top:18px;">
+              <div class="stat-tile">
+                <div class="t-label">Health Factor</div>
+                <div class="t-val" id="current-hf">—</div>
+                <div class="t-sub" id="hf-sub"></div>
+              </div>
+              <div class="stat-tile">
+                <div class="t-label">Registered With Keeper</div>
+                <div class="t-val" id="is-registered">—</div>
+                <div class="t-sub">Has signed RiskParams on file</div>
+              </div>
+              <div class="stat-tile">
+                <div class="t-label">Total Collateral</div>
+                <div class="t-val" id="collateral-usd">—</div>
+                <div class="t-sub">USD, oracle-priced</div>
+              </div>
+              <div class="stat-tile">
+                <div class="t-label">Outstanding Debt</div>
+                <div class="t-val" id="debt-usd">—</div>
+                <div class="t-sub">USD, oracle-priced</div>
+              </div>
+            </div>
+
+            <div class="gauge-wrap">
+              <div class="gauge-labels">
+                <span>Liquidation (1.00)</span>
+                <span>Trigger zone</span>
+                <span>Safe (&gt;1.50)</span>
+              </div>
+              <div class="gauge-track">
+                <div class="gauge-seg seg-danger" style="width:25%"></div>
+                <div class="gauge-seg seg-warning" style="width:20%"></div>
+                <div class="gauge-seg seg-safe" style="width:55%"></div>
+                <div class="gauge-marker" id="hf-marker" style="left:15%">
+                  <div class="pin"></div>
+                  <div class="tag" id="hf-marker-tag">—</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Decision Pipeline -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Decision Pipeline</div>
+              <div class="card-title-sub">POST /positions/{borrower}/assessment — risk → sizing → selection → viability</div>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="pipeline">
+              <div class="pstep done">
+                <div class="pstep-num">1</div>
+                <div><div class="pstep-title">Monitor & risk</div><div class="pstep-desc">Reads live HF, sets a dynamic target from recent volatility</div></div>
+              </div>
+              <div class="pstep done">
+                <div class="pstep-num">2</div>
+                <div><div class="pstep-title">Size the repayment (Δd*)</div><div class="pstep-desc">Minimum debt repay needed to reach the target HF</div></div>
+              </div>
+              <div class="pstep done">
+                <div class="pstep-num">3</div>
+                <div><div class="pstep-title">Select collateral</div><div class="pstep-desc">Cheapest eligible asset to source the swap, via live Uniswap quotes</div></div>
+              </div>
+              <div class="pstep done">
+                <div class="pstep-num">4</div>
+                <div><div class="pstep-title">Viability gate</div><div class="pstep-desc">Declines unless the rescue is economically worth it</div></div>
+              </div>
+            </div>
+
+            <div class="btn-row">
+              <button class="btn btn-secondary btn-block" onclick="runAssessment()" id="btn-assess">Run Dry-Run Assessment</button>
+              <button class="btn btn-primary btn-block" onclick="runProtect()" id="btn-protect">Execute Protection</button>
+            </div>
+
+            <div class="result-panel empty" id="assessment-result">Run an assessment to see the live pipeline output here.</div>
+          </div>
+        </div>
+
+        <!-- Activity Log -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Activity Log</div>
+              <div class="card-title-sub">Real request/response trail for this session</div>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="clearLog()">Clear</button>
+          </div>
+          <div class="card-body tight">
+            <div class="log-box" id="activity-log"></div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- RIGHT COLUMN -->
+      <div class="col">
+
+        <!-- Risk Parameters (signed by borrower) -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Risk Parameters</div>
+              <div class="card-title-sub">EIP-712 signed by the borrower — bounds every action</div>
+            </div>
+            <span class="badge accent">On-chain bounded</span>
+          </div>
+          <div class="card-body">
+            <div class="param-grid">
+              <div>
+                <label class="field-label">HF Trigger</label>
+                <input class="input" id="p-trigger" value="11500" />
+              </div>
+              <div>
+                <label class="field-label">HF Target (base)</label>
+                <input class="input" id="p-target" value="12500" />
+              </div>
+              <div>
+                <label class="field-label">HF Target (max)</label>
+                <input class="input" id="p-targetmax" value="15000" />
+              </div>
+              <div>
+                <label class="field-label">Vol Coefficient K</label>
+                <input class="input" id="p-volk" value="0" />
+              </div>
+              <div>
+                <label class="field-label">Max Slippage (bps)</label>
+                <input class="input" id="p-slippage" value="100" />
+              </div>
+              <div>
+                <label class="field-label">Max Cost (bps)</label>
+                <input class="input" id="p-cost" value="200" />
+              </div>
+              <div class="span-2">
+                <label class="field-label">Allowed Collateral</label>
+                <select class="input" id="p-collateral">
+                  <option value="0x82aF49447D8a07e3bd95BD0d56f35241523fBab1">WETH</option>
+                  <option value="0x5979D7b546E38E414F7E9822514be443A4800529">wstETH</option>
+                </select>
+              </div>
+            </div>
+            <div class="param-row" style="margin-top:14px;">
+              <span class="p-key">Signature</span>
+              <span class="p-val mono" style="color:var(--text-muted);">demo signature (contract verifies on-chain)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Circuit Breaker -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Circuit Breaker</div>
+              <div class="card-title-sub">GET /metrics · POST /breaker/reset</div>
+            </div>
+            <span class="badge safe" id="breaker-badge">NORMAL</span>
+          </div>
+          <div class="card-body">
+            <div class="stat-grid">
+              <div class="stat-tile">
+                <div class="t-label">Consecutive Failures</div>
+                <div class="t-val" id="breaker-fails">—</div>
+              </div>
+              <div class="stat-tile">
+                <div class="t-label">In-Flight Locks</div>
+                <div class="t-val" id="breaker-locks">—</div>
+              </div>
+            </div>
+            <button class="btn btn-secondary btn-block" style="margin-top:14px;" onclick="resetBreaker()">Reset Breaker</button>
+          </div>
+        </div>
+
+        <!-- Keeper Config -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Keeper Config</div>
+              <div class="card-title-sub">GET / PUT /config — live tunables, no restart</div>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="param-grid">
+              <div>
+                <label class="field-label">Poll Interval (s)</label>
+                <input class="input" id="cfg-poll" />
+              </div>
+              <div>
+                <label class="field-label">Breaker Threshold</label>
+                <input class="input" id="cfg-breaker" />
+              </div>
+              <div>
+                <label class="field-label">Cooldown (s)</label>
+                <input class="input" id="cfg-cooldown" />
+              </div>
+              <div>
+                <label class="field-label">Max Sim Bumps</label>
+                <input class="input" id="cfg-bumps" />
+              </div>
+            </div>
+            <div class="toggle-row" style="margin-top:14px;">
+              <label class="field-label" style="margin-bottom:0;">Autonomous Worker Enabled</label>
+              <div class="switch" id="cfg-auto-switch" onclick="toggleAuto()"><div class="knob"></div></div>
+            </div>
+            <button class="btn btn-primary btn-block" style="margin-top:14px;" onclick="saveConfig()">Save Config</button>
+          </div>
+        </div>
+
+        <!-- How the rescue works (static explainer) -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">How a Rescue Executes</div>
+          </div>
+          <div class="card-body">
+            <div class="invariant-list">
+              <div class="invariant-item"><span class="check">✓</span><span class="txt"><b>Flash-loan</b> the debt asset from Aave — no capital required upfront.</span></div>
+              <div class="invariant-item"><span class="check">✓</span><span class="txt"><b>Repay</b> the borrower's debt, improving HF immediately.</span></div>
+              <div class="invariant-item"><span class="check">✓</span><span class="txt"><b>Pull &amp; swap</b> just enough collateral (via aToken allowance only — never a private key) to cover the flash loan + fee.</span></div>
+              <div class="invariant-item"><span class="check">✓</span><span class="txt"><b>Return leftovers</b> to the borrower, then a <b>HealthGuard</b> check: if HF, debt, leverage, or cost aren't strictly better, the entire transaction reverts.</span></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="footer-note">
+      Unaudited hackathon PoC — Arbitrum One mainnet-fork tested (13/13 Foundry tests). Non-custodial: the borrower's key never touches the backend.
+    </div>
+  </div>
+
+  <script src="dashboard.js"></script>
+</body>
+</html>
