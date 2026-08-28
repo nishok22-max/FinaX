@@ -6,10 +6,10 @@ staleness gate (``get_chainlink_price``) to feed the circuit breaker's stale-ora
 """
 from __future__ import annotations
 
-from typing import cast
+from typing import Any, cast
 
 from eth_typing import ChecksumAddress
-from eth_utils import to_checksum_address
+from eth_utils.address import to_checksum_address
 from web3 import AsyncWeb3
 
 from app.chain.client import ChainClient, get_client
@@ -36,7 +36,7 @@ class OracleClient:
         """Resolve and cache the Aave price oracle from the PoolAddressesProvider."""
         if self._oracle_address is None:
 
-            async def _resolve(w3: AsyncWeb3) -> str:
+            async def _resolve(w3: AsyncWeb3[Any]) -> str:
                 provider = w3.eth.contract(
                     address=AAVE_POOL_ADDRESSES_PROVIDER, abi=POOL_ADDRESSES_PROVIDER_ABI
                 )
@@ -49,7 +49,7 @@ class OracleClient:
         """Aave oracle price for ``asset`` (USD, 8 decimals on Arbitrum). No timestamp exposed."""
         token = to_checksum_address(asset)
 
-        async def _read(w3: AsyncWeb3) -> int:
+        async def _read(w3: AsyncWeb3[Any]) -> int:
             oracle = w3.eth.contract(address=await self.oracle_address(), abi=AAVE_ORACLE_ABI)
             return cast(int, await oracle.functions.getAssetPrice(token).call())
 
@@ -66,7 +66,7 @@ class OracleClient:
         """Chainlink ``latestRoundData`` for a named feed (e.g. ``"ETH_USD"``) with staleness gate."""
         feed_address = to_checksum_address(CHAINLINK_FEEDS[feed_key])
 
-        async def _read(w3: AsyncWeb3) -> tuple[tuple[int, int, int, int, int], int, int]:
+        async def _read(w3: AsyncWeb3[Any]) -> tuple[tuple[int, int, int, int, int], int, int]:
             feed = w3.eth.contract(address=feed_address, abi=CHAINLINK_AGGREGATOR_ABI)
             round_data = cast(
                 "tuple[int, int, int, int, int]",

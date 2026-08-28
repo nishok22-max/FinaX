@@ -74,7 +74,7 @@ class PositionMonitor:
     async def sample_price(self, asset: str) -> float:
         """Read the current oracle price for ``asset`` and record it for volatility tracking."""
         price = await self._oracle.get_asset_price(asset)
-        value = price.price / (10**price.decimals)
+        value = float(price.price / (10**price.decimals))
         self.volatility_for(asset).update(value)
         return value
 

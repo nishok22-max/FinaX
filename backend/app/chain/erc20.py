@@ -6,9 +6,9 @@ on the collateral step is declined early rather than simulated and thrown away.
 """
 from __future__ import annotations
 
-from typing import cast
+from typing import Any, cast
 
-from eth_utils import to_checksum_address
+from eth_utils.address import to_checksum_address
 from web3 import AsyncWeb3
 
 from app.chain.client import ChainClient, get_client
@@ -27,7 +27,7 @@ class ERC20Client:
         if addr in self._decimals:
             return self._decimals[addr]
 
-        async def _read(w3: AsyncWeb3) -> int:
+        async def _read(w3: AsyncWeb3[Any]) -> int:
             c = w3.eth.contract(address=addr, abi=ERC20_ABI)
             return cast(int, await c.functions.decimals().call())
 
@@ -39,7 +39,7 @@ class ERC20Client:
         addr = to_checksum_address(token)
         holder = to_checksum_address(account)
 
-        async def _read(w3: AsyncWeb3) -> int:
+        async def _read(w3: AsyncWeb3[Any]) -> int:
             c = w3.eth.contract(address=addr, abi=ERC20_ABI)
             return cast(int, await c.functions.balanceOf(holder).call())
 
@@ -50,7 +50,7 @@ class ERC20Client:
         owner_a = to_checksum_address(owner)
         spender_a = to_checksum_address(spender)
 
-        async def _read(w3: AsyncWeb3) -> int:
+        async def _read(w3: AsyncWeb3[Any]) -> int:
             c = w3.eth.contract(address=addr, abi=ERC20_ABI)
             return cast(int, await c.functions.allowance(owner_a, spender_a).call())
 

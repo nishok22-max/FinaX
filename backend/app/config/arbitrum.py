@@ -17,7 +17,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Final
 
-from eth_utils import to_checksum_address
+from eth_utils.address import to_checksum_address
 
 from app.config.settings import settings
 

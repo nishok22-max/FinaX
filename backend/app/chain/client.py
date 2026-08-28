@@ -12,7 +12,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any, Final, TypeVar
 
-from eth_utils import to_checksum_address
+from eth_utils.address import to_checksum_address
 from web3 import AsyncWeb3
 from web3.contract.async_contract import AsyncContract
 
@@ -47,16 +47,16 @@ class ChainClient:
             raise ChainClientError("No RPC URL configured (set ARBITRUM_RPC_URL).")
         self._timeout = timeout if timeout is not None else settings.rpc_timeout_seconds
         self._max_retries = max_retries if max_retries is not None else settings.rpc_max_retries
-        self._providers: list[AsyncWeb3] = [self._build(u) for u in self._urls]
+        self._providers: list[AsyncWeb3[Any]] = [self._build(u) for u in self._urls]
         self._active = 0  # index of the endpoint currently preferred
         self._contracts: dict[tuple[int, str, int], AsyncContract] = {}
 
-    def _build(self, url: str) -> AsyncWeb3:
+    def _build(self, url: str) -> AsyncWeb3[Any]:
         request_kwargs = {"timeout": self._timeout}
         return AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(url, request_kwargs=request_kwargs))
 
     @property
-    def w3(self) -> AsyncWeb3:
+    def w3(self) -> AsyncWeb3[Any]:
         """The currently-active provider (last one that succeeded)."""
         return self._providers[self._active]
 
@@ -66,11 +66,11 @@ class ChainClient:
         key = (self._active, checksum, id(abi))
         cached = self._contracts.get(key)
         if cached is None:
-            cached = self.w3.eth.contract(address=checksum, abi=abi)  # type: ignore[arg-type]
+            cached = self.w3.eth.contract(address=checksum, abi=abi)
             self._contracts[key] = cached
         return cached
 
-    async def call(self, fn: Callable[[AsyncWeb3], Awaitable[T]]) -> T:
+    async def call(self, fn: Callable[[AsyncWeb3[Any]], Awaitable[T]]) -> T:
         """Run ``fn(active_provider)`` with retry on the active endpoint then failover.
 
         ``fn`` must be idempotent (a read/eth_call). It receives the AsyncWeb3 handle so it

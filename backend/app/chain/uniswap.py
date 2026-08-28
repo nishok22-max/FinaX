@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from eth_utils import to_checksum_address
+from eth_utils.address import to_checksum_address
 from hexbytes import HexBytes
 from web3 import AsyncWeb3
 
@@ -43,7 +43,7 @@ class UniswapClient:
         fee_tier = fee if fee is not None else fee_tier_for(t_in, t_out)
         params = (t_in, t_out, amount_out, fee_tier, 0)  # sqrtPriceLimitX96 = 0
 
-        async def _read(w3: AsyncWeb3) -> tuple[int, int, int, int]:
+        async def _read(w3: AsyncWeb3[Any]) -> tuple[int, int, int, int]:
             quoter = w3.eth.contract(address=UNISWAP_QUOTER_V2, abi=QUOTER_V2_ABI)
             return cast(
                 "tuple[int, int, int, int]",

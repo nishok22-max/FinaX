@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any, cast
 
 from eth_typing import ChecksumAddress
-from eth_utils import to_checksum_address
+from eth_utils.address import to_checksum_address
 from hexbytes import HexBytes
 from web3 import AsyncWeb3
 
@@ -45,7 +45,7 @@ class AaveClient:
         """Resolve and cache the Pool address from the PoolAddressesProvider."""
         if self._pool_address is None:
 
-            async def _resolve(w3: AsyncWeb3) -> str:
+            async def _resolve(w3: AsyncWeb3[Any]) -> str:
                 provider = w3.eth.contract(
                     address=AAVE_POOL_ADDRESSES_PROVIDER, abi=POOL_ADDRESSES_PROVIDER_ABI
                 )
@@ -54,13 +54,13 @@ class AaveClient:
             self._pool_address = to_checksum_address(await self._c.call(_resolve))
         return self._pool_address
 
-    async def _pool(self, w3: AsyncWeb3) -> Any:
+    async def _pool(self, w3: AsyncWeb3[Any]) -> Any:
         return w3.eth.contract(address=await self.pool_address(), abi=AAVE_POOL_ABI)
 
     async def get_user_account_data(self, borrower: str) -> UserAccountData:
         user = to_checksum_address(borrower)
 
-        async def _read(w3: AsyncWeb3) -> tuple[int, int, int, int, int, int]:
+        async def _read(w3: AsyncWeb3[Any]) -> tuple[int, int, int, int, int, int]:
             pool = await self._pool(w3)
             return cast(
                 "tuple[int, int, int, int, int, int]",
@@ -81,7 +81,7 @@ class AaveClient:
         """aToken address, variable-debt token, decimals, and liquidation threshold for `asset`."""
         token = to_checksum_address(asset)
 
-        async def _read(w3: AsyncWeb3) -> tuple[Any, ...]:
+        async def _read(w3: AsyncWeb3[Any]) -> tuple[Any, ...]:
             pool = await self._pool(w3)
             return cast("tuple[Any, ...]", await pool.functions.getReserveData(token).call())
 

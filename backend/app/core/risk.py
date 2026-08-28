@@ -77,9 +77,7 @@ def dynamic_hf_target_bps(sigma: float, base_bps: int, max_bps: int, k: int) -> 
     """
     if max_bps < base_bps:
         raise ValueError("max_bps must be >= base_bps")
-    delta = int(k * sigma)
-    if delta < 0:
-        delta = 0
+    delta = max(int(k * sigma), 0)
     return max(base_bps, min(base_bps + delta, max_bps))
 
 

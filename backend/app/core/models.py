@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from enum import Enum
 
-from eth_utils import to_checksum_address
+from eth_utils.address import to_checksum_address
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.config.arbitrum import AAVE_BASE_CURRENCY_DECIMALS, BPS, WAD
@@ -205,7 +205,7 @@ class OraclePrice(BaseModel):
 
     @property
     def price_float(self) -> float:
-        return self.price / (10**self.decimals)
+        return float(self.price / (10**self.decimals))
 
 
 # --- Phase 4 decision-pipeline results -----------------------------------------------------

@@ -12,7 +12,6 @@ import os
 
 import pytest
 
-
 from app.config.settings import settings
 
 

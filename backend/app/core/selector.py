@@ -20,7 +20,7 @@ from app.core.models import CollateralChoice
 
 def _to_base_value(amount: int, decimals: int, price_base: int) -> int:
     """USD-base (1e8) value of ``amount`` tokens at oracle ``price_base`` (also 1e8)."""
-    return (amount * price_base) // (10**decimals)
+    return int((amount * price_base) // (10**decimals))
 
 
 def build_choice(
@@ -121,7 +121,7 @@ class CollateralSelector:
                     debt_decimals=debt_reserve.decimals,
                     debt_price_base=debt_price,
                     liq_threshold_bps=reserve.liq_threshold_bps,
-                    has_allowance=allowance >= amount_in and amount_in > 0,
+                    has_allowance=0 < amount_in <= allowance,
                 )
             )
         return rank_collaterals(choices)

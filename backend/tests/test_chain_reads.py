@@ -31,15 +31,17 @@ async def test_reserve_info_weth(chain_client) -> None:  # type: ignore[no-untyp
 
 
 async def test_user_account_data_shape(chain_client) -> None:  # type: ignore[no-untyped-def]
-    if not SAMPLE_BORROWER:
-        pytest.skip("Set SAMPLE_BORROWER to a live Aave position for a concrete HF read.")
     from app.chain.aave import AaveClient
 
+    borrower = SAMPLE_BORROWER or "0x0000000000000000000000000000000000000001"
     aave = AaveClient(chain_client)
-    uad = await aave.get_user_account_data(SAMPLE_BORROWER)
+    uad = await aave.get_user_account_data(borrower)
     assert uad.total_collateral_base >= 0
+    assert uad.total_debt_base >= 0
     if uad.has_debt:
         assert uad.hf > 0
+    else:
+        assert uad.hf == float("inf")
 
 
 async def test_live_quote_weth_to_usdc(chain_client) -> None:  # type: ignore[no-untyped-def]
