@@ -11,28 +11,13 @@ Two families:
 """
 from __future__ import annotations
 
-from enum import Enum
-
 from eth_utils.address import to_checksum_address
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.config.arbitrum import AAVE_BASE_CURRENCY_DECIMALS, BPS, WAD
-
-# --- Enums ---------------------------------------------------------------------------------
-
-
-class PositionState(str, Enum):
-    """Lifecycle of a monitored position (full transitions wired in Phase 5)."""
-
-    HEALTHY = "HEALTHY"
-    WATCH = "WATCH"
-    ASSESSING = "ASSESSING"
-    DECLINED = "DECLINED"
-    READY = "READY"
-    SUBMITTED = "SUBMITTED"
-    RESTORED = "RESTORED"
-    REVERTED = "REVERTED"
-
+from app.core.state import (
+    PositionState as PositionState,  # noqa: PLC0414  (explicit re-export; state.py is canonical)
+)
 
 # --- Wire models (mirror on-chain ABI / FastAPI schemas) -----------------------------------
 
@@ -266,3 +251,73 @@ class PositionSnapshot(BaseModel):
     state: PositionState
     hf: float
     hf_trigger_bps: int
+
+
+# --- Phase 5 service / simulation / submission ---------------------------------------------
+
+
+class ProtectResponse(BaseModel):
+    """Result of a protect request: the assessment, the decision, and (if submitted) the tx."""
+
+    borrower: str
+    state: PositionState
+    submitted: bool
+    tx_hash: str | None = None
+    assessment: AssessmentResponse | None = None
+    reason: str | None = None
+
+
+class RescuePlan(BaseModel):
+    """Everything the simulator/submitter need to build the ``executeProtection`` tx."""
+
+    borrower: str
+    debt_asset: str
+    repay_amount: int          # Δd* candidate (bumped in-place by the simulator)
+    collateral_asset: str
+    fee_tier: int
+    amount_in: int             # quoted collateral input for the current out_needed
+    hf_target_bps: int
+    max_slippage_bps: int
+
+
+class SimulationResult(BaseModel):
+    """Output of the ``eth_call`` dry-run of ``executeProtection`` (FR-8 pre-flight)."""
+
+    success: bool
+    repay_amount: int  # final (possibly bumped) Δd*
+    amount_in_maximum: int
+    hf_after: float | None = None
+    bumps: int = 0
+    revert_reason: str | None = None
+
+
+class SubmissionResult(BaseModel):
+    """Output of signing + broadcasting the tx and awaiting the receipt."""
+
+    tx_hash: str
+    status: int  # 1 = success, 0 = reverted
+    state: PositionState  # RESTORED or REVERTED
+    hf_after: float | None = None
+    gas_used: int | None = None
+
+
+class KeeperConfig(BaseModel):
+    """Bounded, operator-tunable runtime config exposed via ``GET`` / ``PUT /config``."""
+
+    poll_interval_seconds: int = Field(ge=1, le=3600)
+    breaker_max_consecutive_failures: int = Field(ge=1, le=20)
+    inflight_cooldown_seconds: int = Field(ge=0, le=3600)
+    max_simulation_bumps: int = Field(ge=0, le=10)
+    autonomous_enabled: bool = True
+
+
+class MetricsSnapshot(BaseModel):
+    """Observability snapshot for ``GET /metrics`` (NFR-5, FR-17)."""
+
+    breaker_paused: bool
+    breaker_consecutive_failures: int
+    breaker_trip_reason: str | None
+    in_flight_borrowers: list[str]
+    registered_positions: int
+    counters: dict[str, int]
+    states: dict[str, str]

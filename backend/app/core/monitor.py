@@ -10,8 +10,9 @@ from __future__ import annotations
 from app.chain.aave import AaveClient
 from app.chain.oracle import OracleClient
 from app.config.arbitrum import BPS
-from app.core.models import PositionSnapshot, PositionState, UserAccountData
+from app.core.models import PositionSnapshot, UserAccountData
 from app.core.risk import RollingVolatility
+from app.core.state import PositionState
 
 
 def classify_state(

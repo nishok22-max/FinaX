@@ -1,421 +1,330 @@
 /**
- * FINAX // LIQUIDATION SHIELD CONSOLE CONTROLLER
- * High-utility DeFi operator console interfacing with the FastAPI keeper service.
+ * Liquidation Shield — Operator Console (light theme, jury-demo build)
+ * Every function below calls a real FastAPI endpoint and renders the actual
+ * response. Nothing is scripted or faked — if the backend declines, says so.
  */
 
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = "";
 
-// Standard Sample Positions for Operator Testing
-const PRESET_POSITIONS = {
-  atRisk: {
-    address: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
-    hf: 1.1182,
-    collateralUsd: 300000.0,
-    debtUsd: 200000.0,
-    collateralAsset: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1", // WETH
-    collateralLabel: "100.00 WETH ($3,000/ETH)",
-    state: "ASSESSING",
-    optimalRepay: 31578.95,
-    unlockCollateral: 10.63,
-  },
-  critical: {
-    address: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
-    hf: 1.0420,
-    collateralUsd: 450000.0,
-    debtUsd: 360000.0,
-    collateralAsset: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
-    collateralLabel: "150.00 WETH ($3,000/ETH)",
-    state: "ASSESSING",
-    optimalRepay: 74210.50,
-    unlockCollateral: 24.98,
-  },
-  healthy: {
-    address: "0x12a9B9e0Ac7892E1d782163b202A544F1283B921",
-    hf: 1.6250,
-    collateralUsd: 500000.0,
-    debtUsd: 220000.0,
-    collateralAsset: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
-    collateralLabel: "166.66 WETH ($3,000/ETH)",
-    state: "HEALTHY",
-    optimalRepay: 0,
-    unlockCollateral: 0,
-  }
+const TOKEN_SYMBOLS = {
+  "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1": "WETH",
+  "0xaf88d065e77c8cC2239327C5EDb3A432268e5831": "USDC",
+  "0x5979D7b546E38E414F7E9822514be443A4800529": "wstETH",
 };
 
-let currentPosition = PRESET_POSITIONS.atRisk;
-let consecutiveFails = 0;
-let breakerPaused = false;
-let inFlightLocked = false;
+function symbolOf(addr) {
+  if (!addr) return "—";
+  return TOKEN_SYMBOLS[addr] || `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+}
 
-// ── Initialization ────────────────────────────────────────────────────────────
+let autonomousEnabled = true;
+
+// ── Init ──────────────────────────────────────────────────────────────
 window.addEventListener("DOMContentLoaded", () => {
-  renderPosition(currentPosition);
-  pollSystemHealth();
-  setInterval(pollSystemHealth, 8000);
-
-  // Keyboard shortcut for Command Palette
-  window.addEventListener("keydown", (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-      e.preventDefault();
-      openCmdPalette();
-    }
-    if (e.key === "Escape") {
-      closeCmdPalette();
-    }
-  });
+  pollHealth();
+  pollMetrics();
+  loadConfig();
+  setInterval(pollHealth, 8000);
+  setInterval(pollMetrics, 6000);
+  logEvent("info", "console", "Operator console loaded. Talking to " + window.location.origin);
 });
 
-// ── Position Rendering & Gauge Calculation ──────────────────────────────────
-function renderPosition(pos) {
-  currentPosition = pos;
-  document.getElementById("borrower-input").value = pos.address;
-  document.getElementById("current-hf").textContent = pos.hf.toFixed(4);
-  document.getElementById("collateral-usd").textContent = `$${pos.collateralUsd.toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
-  document.getElementById("collateral-asset-info").textContent = pos.collateralLabel;
-  document.getElementById("debt-usd").textContent = `$${pos.debtUsd.toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
-
-  const stateBadge = document.getElementById("position-state-badge");
-  stateBadge.textContent = `STATE: ${pos.state}`;
-
-  if (pos.state === "ASSESSING") {
-    stateBadge.className = "badge badge-accent";
-  } else if (pos.state === "RESTORED" || pos.state === "HEALTHY") {
-    stateBadge.className = "badge text-safe";
-  } else {
-    stateBadge.className = "badge";
-  }
-
-  // Update gauge position
-  // 1.00 HF = 15%, 1.15 HF = 35%, 1.25 HF = 55%, 1.50+ HF = 85%
-  let percent = 15 + ((pos.hf - 1.0) / 0.5) * 60;
-  percent = Math.max(10, Math.min(92, percent));
-  const marker = document.getElementById("hf-marker");
-  marker.style.left = `${percent}%`;
-  marker.querySelector(".marker-tag").textContent = pos.hf.toFixed(3);
-
-  // Update pipeline step 2 text
-  document.getElementById("optimal-repay-desc").textContent =
-    pos.optimalRepay > 0
-      ? `Optimal Repayment = ${pos.optimalRepay.toLocaleString()} USDC · Unlock ~${pos.unlockCollateral} WETH`
-      : `Position healthy · No restructuring required (HF = ${pos.hf.toFixed(2)})`;
-
-  logConsole(`Loaded position for ${pos.address}. HF = ${pos.hf.toFixed(4)} [${pos.state}]`);
-}
-
-function loadPosition() {
-  const addr = document.getElementById("borrower-input").value.trim();
-  if (!addr.startsWith("0x") || addr.length !== 42) {
-    alert("Invalid Ethereum address format (must be 0x-prefixed 42-char hex).");
-    return;
-  }
-  
-  // Try querying live backend API
-  fetch(`${API_BASE}/positions/${addr}`)
-    .then(r => {
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return r.json();
-    })
-    .then(data => {
-      renderPosition({
-        address: data.borrower,
-        hf: data.hf || 1.12,
-        collateralUsd: data.collateral_usd || 300000,
-        debtUsd: data.debt_usd || 200000,
-        collateralAsset: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
-        collateralLabel: "100.00 WETH ($3,000/ETH)",
-        state: data.state || "ASSESSING",
-        optimalRepay: 31578.95,
-        unlockCollateral: 10.63,
-      });
-      addLedgerEntry("POSITION_QUERY", `Live query for ${addr} returned HF=${data.hf}`);
-    })
-    .catch(() => {
-      // Fallback local inspection
-      renderPosition({
-        address: addr,
-        hf: 1.1245,
-        collateralUsd: 310000.0,
-        debtUsd: 215000.0,
-        collateralAsset: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
-        collateralLabel: "103.33 WETH ($3,000/ETH)",
-        state: "ASSESSING",
-        optimalRepay: 33450.0,
-        unlockCollateral: 11.25,
-      });
-    });
-}
-
-function generateSimulatedPosition() {
-  const rand = Math.random();
-  if (rand < 0.5) {
-    renderPosition(PRESET_POSITIONS.atRisk);
-  } else if (rand < 0.8) {
-    renderPosition(PRESET_POSITIONS.critical);
-  } else {
-    renderPosition(PRESET_POSITIONS.healthy);
-  }
-}
-
-// ── Pipeline Action Triggers ──────────────────────────────────────────────────
-async function triggerDryRun() {
-  const btn = document.getElementById("btn-assess");
-  btn.disabled = true;
-  btn.textContent = "SIMULATING...";
-
-  logConsole(`Initiating dry-run simulation for ${currentPosition.address}...`);
-  setPipelineStepActive(2);
-
-  // EIP-712 Body Payload matching backend schema
-  const payload = {
-    params: {
-      borrower: currentPosition.address,
-      hf_trigger_bps: 11500,
-      hf_target_base_bps: 12500,
-      vol_coeff_k: 7500,
-      hf_target_max_bps: 14000,
-      max_slippage_bps: 100,
-      max_cost_bps: 500,
-      allowed_collaterals: ["0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"],
-      nonce: 1,
-      deadline: 2000000000
-    },
-    signature: "0x8a9cf27183e8b8c738f19283719284729183928192839182938192839182938172938192839182938192839182938192839182938192839182938192839182931c"
-  };
-
+// ── Health / RPC status ──────────────────────────────────────────────
+async function pollHealth() {
+  const chipRpc = document.getElementById("chip-rpc");
   try {
-    const res = await fetch(`${API_BASE}/positions/${currentPosition.address}/assessment`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const res = await fetch(`${API_BASE}/health`);
+    const data = await res.json();
+    document.getElementById("kpi-block").textContent = data.block_number
+      ? data.block_number.toLocaleString()
+      : "—";
+    if (data.rpc_connected) {
+      chipRpc.className = "chip status-ok";
+      chipRpc.innerHTML = `<span class="dot"></span> RPC connected <span class="mono">#${data.block_number?.toLocaleString() ?? "?"}</span>`;
+    } else {
+      chipRpc.className = "chip status-bad";
+      chipRpc.innerHTML = `<span class="dot"></span> RPC not connected`;
+    }
+  } catch (err) {
+    chipRpc.className = "chip status-bad";
+    chipRpc.innerHTML = `<span class="dot"></span> Backend unreachable`;
+  }
+}
+
+// ── Metrics (breaker, locks, counters) ───────────────────────────────
+async function pollMetrics() {
+  try {
+    const res = await fetch(`${API_BASE}/metrics`);
     const data = await res.json();
 
-    logConsole(`Dry-run assessment SUCCESS: Viable=${data.viable}, Repay=${data.repay_amount / 1e6} USDC, EstCost=${data.est_cost_bps}bps`);
-    addLedgerEntry("DRY_RUN_ASSESS", `borrower=${currentPosition.address.slice(0, 8)}... viable=${data.viable} cost=${data.est_cost_bps}bps`);
-    document.getElementById("pipeline-status").textContent = "SIMULATION PASSED (VIABLE = TRUE)";
+    document.getElementById("kpi-registered").textContent = data.registered_positions ?? "0";
+    const assessed = data.counters?.assessed ?? 0;
+    const declined = data.counters?.declined ?? 0;
+    document.getElementById("kpi-assessed").textContent = `${assessed} / ${declined}`;
+    document.getElementById("kpi-inflight").textContent = (data.in_flight_borrowers?.length ?? 0);
+
+    document.getElementById("breaker-fails").textContent =
+      `${data.breaker_consecutive_failures ?? 0} / 3`;
+    document.getElementById("breaker-locks").textContent = data.in_flight_borrowers?.length ?? 0;
+
+    const breakerBadge = document.getElementById("breaker-badge");
+    const chipBreaker = document.getElementById("chip-breaker");
+    if (data.breaker_paused) {
+      breakerBadge.textContent = "PAUSED";
+      breakerBadge.className = "badge danger";
+      chipBreaker.className = "chip status-bad";
+      chipBreaker.innerHTML = `<span class="dot"></span> Breaker paused`;
+    } else {
+      breakerBadge.textContent = "NORMAL";
+      breakerBadge.className = "badge safe";
+      chipBreaker.className = "chip status-ok";
+      chipBreaker.innerHTML = `<span class="dot"></span> Breaker normal`;
+    }
   } catch (err) {
-    // Graceful visual simulation fallback
-    logConsole(`[OFF-CHAIN SIM] Optimal Repay = ${currentPosition.optimalRepay.toLocaleString()} USDC · Slippage Cap = 100 BPS · Viable = True`);
-    addLedgerEntry("DRY_RUN_ASSESS", `borrower=${currentPosition.address.slice(0, 8)}... viable=true cost=15bps`);
-    document.getElementById("pipeline-status").textContent = "SIMULATION PASSED (VIABLE = TRUE)";
-  } finally {
-    btn.disabled = false;
-    btn.textContent = "1. DRY-RUN SIMULATION";
-    setPipelineStepCompleted(2);
-    setPipelineStepActive(3);
+    // Leave last-known values; backend may be mid-restart.
   }
-}
-
-async function executeProtection() {
-  if (breakerPaused) {
-    alert("Circuit breaker is currently tripped (PAUSED). Reset before executing transactions.");
-    return;
-  }
-
-  const btn = document.getElementById("btn-protect");
-  btn.disabled = true;
-  btn.textContent = "EXECUTING RESCUE...";
-
-  logConsole(`Acquiring in-flight lock for ${currentPosition.address}...`);
-  setInFlightLock(true);
-
-  // Step 3: Flashloan
-  setPipelineStepActive(3);
-  await sleep(400);
-  logConsole(`Aave v3 Pool.flashLoanSimple executed: Borrowed ${currentPosition.optimalRepay.toLocaleString()} USDC`);
-
-  // Step 4: Swap
-  setPipelineStepCompleted(3);
-  setPipelineStepActive(4);
-  await sleep(400);
-  logConsole(`Uniswap v3 ExactOutput: Swapped ${currentPosition.unlockCollateral} WETH for ${(currentPosition.optimalRepay * 1.0005).toFixed(2)} USDC`);
-
-  // Step 5: Repay & Restore
-  setPipelineStepCompleted(4);
-  setPipelineStepActive(5);
-
-  const payload = {
-    params: {
-      borrower: currentPosition.address,
-      hf_trigger_bps: 11500,
-      hf_target_base_bps: 12500,
-      vol_coeff_k: 7500,
-      hf_target_max_bps: 14000,
-      max_slippage_bps: 100,
-      max_cost_bps: 500,
-      allowed_collaterals: ["0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"],
-      nonce: 1,
-      deadline: 2000000000
-    },
-    signature: "0x8a9cf27183e8b8c738f19283719284729183928192839182938192839182938172938192839182938192839182938192839182938192839182938192839182931c"
-  };
-
-  try {
-    const res = await fetch(`${API_BASE}/positions/${currentPosition.address}/protect`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-    const txHash = data.tx_hash || `0x${Math.random().toString(16).slice(2, 10)}...${Math.random().toString(16).slice(2, 6)}`;
-
-    logConsole(`TX SUBMITTED: ${txHash} · State: RESTORED · HF Target achieved`);
-    addLedgerEntry("POSITION_RESTORED", `tx=${txHash} hf_after=1.285 gas=142,800`);
-  } catch (err) {
-    const mockTx = "0x9ab83f71c4820d91240184bfaec7183e8b8c738f192837192847291839281928";
-    logConsole(`TX CONFIRMED: ${mockTx} · Invariants Verified · HF After = 1.2850`);
-    addLedgerEntry("POSITION_RESTORED", `tx=0x9ab8...1928 hf_after=1.285 status=RESTORED`);
-  } finally {
-    setPipelineStepCompleted(5);
-    setInFlightLock(false);
-    btn.disabled = false;
-    btn.textContent = "2. EXECUTE RESTRUCTURING";
-
-    // Update position to RESTORED
-    renderPosition({
-      ...currentPosition,
-      hf: 1.2850,
-      collateralUsd: currentPosition.collateralUsd - (currentPosition.unlockCollateral * 3000),
-      debtUsd: currentPosition.debtUsd - currentPosition.optimalRepay,
-      state: "RESTORED",
-      optimalRepay: 0,
-      unlockCollateral: 0,
-    });
-    document.getElementById("pipeline-status").textContent = "POSITION RESTORED (HF = 1.2850)";
-  }
-}
-
-// ── Circuit Breaker Controls ──────────────────────────────────────────────────
-function tripBreaker() {
-  consecutiveFails = 3;
-  breakerPaused = true;
-  document.getElementById("consecutive-fails").textContent = "3 / 3 (TRIPPED)";
-  document.getElementById("status-breaker").textContent = "PAUSED (TRIPPED)";
-  document.getElementById("status-breaker").className = "cell-val text-danger";
-  document.getElementById("breaker-status-badge").textContent = "PAUSED";
-  document.getElementById("breaker-status-badge").className = "badge badge-accent";
-  logConsole(`⚠️ CIRCUIT BREAKER TRIPPED: 3 consecutive transaction reverts detected.`);
-  addLedgerEntry("CIRCUIT_BREAKER", "BREAKER TRIPPED: All automated rescue submissions paused.");
 }
 
 async function resetBreaker() {
-  consecutiveFails = 0;
-  breakerPaused = false;
-  document.getElementById("consecutive-fails").textContent = "0 / 3";
-  document.getElementById("status-breaker").textContent = "NORMAL (0/3 FAILS)";
-  document.getElementById("status-breaker").className = "cell-val status-safe";
-  document.getElementById("breaker-status-badge").textContent = "ACTIVE";
-  document.getElementById("breaker-status-badge").className = "badge";
-
+  logEvent("info", "POST /breaker/reset", "Requesting breaker reset…");
   try {
-    await fetch(`${API_BASE}/breaker/reset`, { method: "POST" });
-  } catch (_) {}
-
-  logConsole(`Circuit breaker reset by operator. Keeper submissions resumed.`);
-  addLedgerEntry("BREAKER_RESET", "Operator manually cleared circuit breaker.");
-}
-
-function setInFlightLock(locked) {
-  inFlightLocked = locked;
-  document.getElementById("mutex-status").textContent = locked ? "LOCKED" : "UNLOCKED";
-  document.getElementById("status-locks").textContent = locked ? "1 IN-FLIGHT" : "0 IN-FLIGHT";
-}
-
-// ── System Health & Background Poller ─────────────────────────────────────────
-async function pollSystemHealth() {
-  const now = new Date();
-  const timeStr = now.toISOString().slice(11, 19) + " UTC";
-  document.getElementById("last-poll-time").textContent = `POLL: ${timeStr}`;
-
-  try {
-    const res = await fetch(`${API_BASE}/health`);
-    if (!res.ok) throw new Error();
+    const res = await fetch(`${API_BASE}/breaker/reset`, { method: "POST" });
     const data = await res.json();
-    if (data.block_number) {
-      document.getElementById("status-rpc").innerHTML = `<span class="dot"></span> ONLINE #${data.block_number.toLocaleString()}`;
-    }
-  } catch (_) {
-    // Keep local block simulation ticking
-    const simulatedBlock = 312894100 + Math.floor(Date.now() / 12000) % 1000;
-    document.getElementById("status-rpc").innerHTML = `<span class="dot"></span> ONLINE #${simulatedBlock.toLocaleString()}`;
+    logEvent("ok", "POST /breaker/reset", `paused=${data.breaker_paused} failures=${data.breaker_consecutive_failures}`);
+    pollMetrics();
+  } catch (err) {
+    logEvent("err", "POST /breaker/reset", err.message);
   }
 }
 
-// ── Pipeline UI Step Helpers ─────────────────────────────────────────────────
-function setPipelineStepActive(num) {
-  for (let i = 1; i <= 5; i++) {
-    const step = document.getElementById(`step-${i}`);
-    if (i === num) {
-      step.className = "flow-step active";
-    } else if (i < num) {
-      step.className = "flow-step completed";
-    } else {
-      step.className = "flow-step pending";
-    }
+// ── Position Inspector ────────────────────────────────────────────────
+async function loadPosition() {
+  const addr = document.getElementById("borrower-input").value.trim();
+  if (!addr.startsWith("0x") || addr.length !== 42) {
+    alert("Enter a valid 0x-prefixed, 42-character Ethereum address.");
+    return;
+  }
+  const btn = document.getElementById("btn-load");
+  btn.disabled = true;
+  btn.textContent = "Loading…";
+  logEvent("info", `GET /positions/${short(addr)}`, "Reading live Aave position…");
+
+  try {
+    const res = await fetch(`${API_BASE}/positions/${addr}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    renderPosition(data);
+    logEvent("ok", `GET /positions/${short(addr)}`,
+      `state=${data.state} hf=${data.hf ?? "∞"} debt=$${(data.debt_usd ?? 0).toLocaleString()}`);
+  } catch (err) {
+    logEvent("err", `GET /positions/${short(addr)}`, err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Load Position";
   }
 }
 
-function setPipelineStepCompleted(num) {
-  const step = document.getElementById(`step-${num}`);
-  step.className = "flow-step completed";
+function renderPosition(data) {
+  const hf = data.hf; // null when there's no debt (HF is mathematically infinite)
+  document.getElementById("current-hf").textContent = hf === null || hf === undefined ? "∞" : hf.toFixed(4);
+  document.getElementById("hf-sub").textContent = data.has_debt ? "Live from getUserAccountData" : "No open debt on Aave";
+  document.getElementById("is-registered").textContent = data.registered ? "Yes" : "No";
+  document.getElementById("collateral-usd").textContent = `$${(data.collateral_usd ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
+  document.getElementById("debt-usd").textContent = `$${(data.debt_usd ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
+
+  const badge = document.getElementById("position-state-badge");
+  badge.textContent = `STATE: ${data.state}`;
+  badge.className = "badge " + stateClass(data.state);
+
+  // Gauge marker: 1.00 -> 10%, 1.15 -> 30%, 1.50+ -> 92%
+  let percent;
+  if (hf === null || hf === undefined || !isFinite(hf)) {
+    percent = 92;
+  } else {
+    percent = 10 + ((hf - 1.0) / 0.5) * 65;
+    percent = Math.max(6, Math.min(92, percent));
+  }
+  document.getElementById("hf-marker").style.left = `${percent}%`;
+  document.getElementById("hf-marker-tag").textContent = hf === null || hf === undefined ? "∞" : hf.toFixed(3);
 }
 
-// ── Logging & Audit Helpers ───────────────────────────────────────────────────
-function logConsole(msg) {
-  const c = document.getElementById("console-logs");
-  const now = new Date();
-  const stamp = now.toTimeString().slice(0, 8) + "." + String(now.getMilliseconds()).padStart(3, "0");
-  const line = document.createElement("div");
-  line.className = "log-line";
-  line.innerHTML = `<span class="text-dim">[${stamp}]</span> ${escapeHtml(msg)}`;
-  c.appendChild(line);
-  c.scrollTop = c.scrollHeight;
+function stateClass(state) {
+  if (state === "HEALTHY" || state === "RESTORED") return "safe";
+  if (state === "DECLINED" || state === "REVERTED") return "danger";
+  if (state === "ASSESSING" || state === "SUBMITTED" || state === "READY") return "accent";
+  return "";
 }
 
-function clearConsole() {
-  document.getElementById("console-logs").innerHTML = "";
+// ── Risk params payload (from the form on the right) ─────────────────
+function buildParamsPayload(borrower) {
+  return {
+    params: {
+      borrower,
+      hfTriggerBps: parseInt(document.getElementById("p-trigger").value, 10),
+      hfTargetBaseBps: parseInt(document.getElementById("p-target").value, 10),
+      volCoeffK: parseInt(document.getElementById("p-volk").value, 10),
+      hfTargetMaxBps: parseInt(document.getElementById("p-targetmax").value, 10),
+      maxSlippageBps: parseInt(document.getElementById("p-slippage").value, 10),
+      maxCostBps: parseInt(document.getElementById("p-cost").value, 10),
+      allowedCollaterals: [document.getElementById("p-collateral").value],
+      nonce: Date.now() % 1_000_000,
+      deadline: 2000000000,
+    },
+    signature: "0x" + "00".repeat(65), // demo signature — the vault contract verifies EIP-712 on-chain
+  };
 }
 
-function addLedgerEntry(evt, detail) {
-  const ledger = document.getElementById("audit-ledger");
+// ── Decision Pipeline: dry-run assessment ─────────────────────────────
+async function runAssessment() {
+  const addr = document.getElementById("borrower-input").value.trim();
+  if (!addr.startsWith("0x") || addr.length !== 42) {
+    alert("Load a valid borrower address first.");
+    return;
+  }
+  const btn = document.getElementById("btn-assess");
+  btn.disabled = true;
+  btn.textContent = "Running…";
+  logEvent("info", `POST /positions/${short(addr)}/assessment`, "Running risk → sizing → selection → viability…");
+
+  try {
+    const res = await fetch(`${API_BASE}/positions/${addr}/assessment`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(buildParamsPayload(addr)),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail ? JSON.stringify(data.detail) : `HTTP ${res.status}`);
+    renderAssessment(data);
+    logEvent(data.viable ? "ok" : "warn", `POST /assessment`,
+      `viable=${data.viable} repay=${(data.repay_amount / 1e6).toFixed(2)} USDC cost=${data.est_cost_bps}bps${data.reason ? " · " + data.reason : ""}`);
+  } catch (err) {
+    logEvent("err", `POST /assessment`, err.message);
+    document.getElementById("assessment-result").className = "result-panel empty";
+    document.getElementById("assessment-result").textContent = `Request failed: ${err.message}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Run Dry-Run Assessment";
+  }
+}
+
+function renderAssessment(data) {
+  const panel = document.getElementById("assessment-result");
+  panel.className = "result-panel";
+  panel.innerHTML = `
+    <div class="result-row"><span class="r-key">Viable</span><span class="r-val" style="color:${data.viable ? "var(--safe)" : "var(--danger)"}">${data.viable ? "TRUE" : "FALSE"}</span></div>
+    <div class="result-row"><span class="r-key">Current HF</span><span class="r-val">${(data.hf === null || data.hf === undefined || !isFinite(data.hf)) ? "∞" : data.hf.toFixed(4)}</span></div>
+    <div class="result-row"><span class="r-key">Target HF</span><span class="r-val">${data.hf_target.toFixed(4)}</span></div>
+    <div class="result-row"><span class="r-key">Repay Amount (Δd*)</span><span class="r-val">${(data.repay_amount / 1e6).toLocaleString(undefined, {minimumFractionDigits:2})} USDC</span></div>
+    <div class="result-row"><span class="r-key">Collateral Source</span><span class="r-val">${symbolOf(data.collateral_asset)}</span></div>
+    <div class="result-row"><span class="r-key">Estimated Cost</span><span class="r-val">${data.est_cost_bps} bps</span></div>
+    ${data.reason ? `<div class="result-row"><span class="r-key">Reason</span><span class="r-val">${data.reason}</span></div>` : ""}
+  `;
+}
+
+// ── Execute Protection (assess → simulate → submit) ───────────────────
+async function runProtect() {
+  const addr = document.getElementById("borrower-input").value.trim();
+  if (!addr.startsWith("0x") || addr.length !== 42) {
+    alert("Load a valid borrower address first.");
+    return;
+  }
+  const btn = document.getElementById("btn-protect");
+  btn.disabled = true;
+  btn.textContent = "Executing…";
+  logEvent("info", `POST /positions/${short(addr)}/protect`, "Assess → simulate → submit…");
+
+  try {
+    const res = await fetch(`${API_BASE}/positions/${addr}/protect`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(buildParamsPayload(addr)),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail ? JSON.stringify(data.detail) : `HTTP ${res.status}`);
+
+    const panel = document.getElementById("assessment-result");
+    panel.className = "result-panel";
+    panel.innerHTML = `
+      <div class="result-row"><span class="r-key">Result State</span><span class="r-val" style="color:${data.state === "RESTORED" ? "var(--safe)" : "var(--danger)"}">${data.state}</span></div>
+      <div class="result-row"><span class="r-key">Submitted On-Chain</span><span class="r-val">${data.submitted ? "TRUE" : "FALSE"}</span></div>
+      <div class="result-row"><span class="r-key">Tx Hash</span><span class="r-val">${data.tx_hash || "—"}</span></div>
+      ${data.reason ? `<div class="result-row"><span class="r-key">Reason</span><span class="r-val">${data.reason}</span></div>` : ""}
+    `;
+    logEvent(data.submitted ? "ok" : "warn", `POST /protect`,
+      `state=${data.state} submitted=${data.submitted}${data.reason ? " · " + data.reason : ""}`);
+    loadPosition();
+    pollMetrics();
+  } catch (err) {
+    logEvent("err", `POST /protect`, err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Execute Protection";
+  }
+}
+
+// ── Keeper Config ───────────────────────────────────────────────────
+async function loadConfig() {
+  try {
+    const res = await fetch(`${API_BASE}/config`);
+    const data = await res.json();
+    document.getElementById("cfg-poll").value = data.poll_interval_seconds;
+    document.getElementById("cfg-breaker").value = data.breaker_max_consecutive_failures;
+    document.getElementById("cfg-cooldown").value = data.inflight_cooldown_seconds;
+    document.getElementById("cfg-bumps").value = data.max_simulation_bumps;
+    autonomousEnabled = data.autonomous_enabled;
+    syncAutoSwitch();
+  } catch (err) {
+    logEvent("err", "GET /config", err.message);
+  }
+}
+
+function toggleAuto() {
+  autonomousEnabled = !autonomousEnabled;
+  syncAutoSwitch();
+}
+function syncAutoSwitch() {
+  document.getElementById("cfg-auto-switch").className = "switch" + (autonomousEnabled ? " on" : "");
+}
+
+async function saveConfig() {
+  const payload = {
+    poll_interval_seconds: parseInt(document.getElementById("cfg-poll").value, 10),
+    breaker_max_consecutive_failures: parseInt(document.getElementById("cfg-breaker").value, 10),
+    inflight_cooldown_seconds: parseInt(document.getElementById("cfg-cooldown").value, 10),
+    max_simulation_bumps: parseInt(document.getElementById("cfg-bumps").value, 10),
+    autonomous_enabled: autonomousEnabled,
+  };
+  logEvent("info", "PUT /config", "Applying live config update…");
+  try {
+    const res = await fetch(`${API_BASE}/config`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail ? JSON.stringify(data.detail) : `HTTP ${res.status}`);
+    logEvent("ok", "PUT /config", "Config applied — takes effect on the live service.");
+  } catch (err) {
+    logEvent("err", "PUT /config", err.message);
+  }
+}
+
+// ── Activity log ────────────────────────────────────────────────────
+function logEvent(level, tag, detail) {
+  const box = document.getElementById("activity-log");
   const now = new Date();
   const stamp = now.toTimeString().slice(0, 8);
-  const row = document.createElement("div");
-  row.className = "ledger-row";
-  row.innerHTML = `
-    <span class="l-time">${stamp}</span>
-    <span class="l-event text-accent">${evt}</span>
-    <span class="l-detail">${escapeHtml(detail)}</span>
-  `;
-  ledger.prepend(row);
+  const line = document.createElement("div");
+  line.className = `log-line ${level}`;
+  line.innerHTML = `<span class="l-time">${stamp}</span><span class="l-tag">${escapeHtml(tag)}</span> — ${escapeHtml(detail)}`;
+  box.prepend(line);
 }
-
+function clearLog() {
+  document.getElementById("activity-log").innerHTML = "";
+}
+function short(addr) {
+  return addr.slice(0, 6) + "…" + addr.slice(-4);
+}
 function escapeHtml(str) {
-  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-function sleep(ms) {
-  return new Promise(r => setTimeout(r, ms));
-}
-
-// ── Command Palette (⌘K) ──────────────────────────────────────────────────────
-function openCmdPalette() {
-  document.getElementById("cmd-modal").style.display = "flex";
-  document.getElementById("cmd-input").focus();
-}
-
-function closeCmdPalette(e) {
-  if (!e || e.target.id === "cmd-modal" || e.key === "Escape") {
-    document.getElementById("cmd-modal").style.display = "none";
-  }
-}
-
-function executeCmd(cmd) {
-  closeCmdPalette();
-  if (cmd === "load-at-risk") renderPosition(PRESET_POSITIONS.atRisk);
-  if (cmd === "load-healthy") renderPosition(PRESET_POSITIONS.healthy);
-  if (cmd === "run-sim") triggerDryRun();
-  if (cmd === "execute-restructure") executeProtection();
-  if (cmd === "reset-breaker") resetBreaker();
+  return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }

@@ -3,393 +3,314 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>FINAX // Automated Liquidation Shield & Flash-Repayment Console</title>
-  <!-- Distinct Technical Typography: Space Grotesk (Display) + JetBrains Mono (Data/Code) -->
+  <title>Liquidation Shield — Operator Console</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,700;1,400&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="app.css" />
 </head>
 <body>
 
-  <!-- Top Operator Bar -->
-  <header class="operator-bar">
-    <div class="brand-zone">
-      <div class="brand-glyph">▲</div>
-      <div class="brand-title">
-        <span class="brand-name">FINAX</span>
-        <span class="brand-sub">LIQUIDATION SHIELD VAULT v0.5.0</span>
+  <!-- Top bar -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">▲</div>
+      <div class="brand-text">
+        <div class="brand-name">Liquidation Shield</div>
+        <div class="brand-sub">Automated Flash-Repayment Vault · PS-11</div>
       </div>
-      <div class="target-chain-tag">ARBITRUM ONE // 42161</div>
     </div>
-
-    <div class="system-status-ribbon">
-      <div class="status-cell">
-        <span class="cell-label">RPC NODE</span>
-        <span class="cell-val status-online" id="status-rpc"><span class="dot"></span> ONLINE #312,894,102</span>
-      </div>
-      <div class="status-cell">
-        <span class="cell-label">KEEPER WORKER</span>
-        <span class="cell-val status-online" id="status-worker"><span class="dot"></span> ACTIVE (12s TICK)</span>
-      </div>
-      <div class="status-cell">
-        <span class="cell-label">CIRCUIT BREAKER</span>
-        <span class="cell-val status-safe" id="status-breaker">NORMAL (0/3 FAILS)</span>
-      </div>
-      <div class="status-cell">
-        <span class="cell-label">ACTIVE LOCKS</span>
-        <span class="cell-val" id="status-locks">0 IN-FLIGHT</span>
-      </div>
-      <div class="status-cell shortcut-cell" onclick="openCmdPalette()">
-        <kbd>⌘K</kbd> COMMANDS
-      </div>
+    <div class="topbar-right">
+      <span class="chip" id="chip-chain"><span class="dot"></span> Arbitrum One · 42161</span>
+      <span class="chip status-warn" id="chip-rpc"><span class="dot"></span> RPC connecting…</span>
+      <span class="chip status-ok" id="chip-breaker"><span class="dot"></span> Breaker normal</span>
+      <a class="btn-link" href="/docs" target="_blank" rel="noopener">API Reference ↗</a>
     </div>
   </header>
 
-  <!-- Metrics Banner (Strict 1px solid, Asymmetric Density) -->
-  <section class="kpi-banner">
-    <div class="kpi-item">
-      <div class="kpi-label">TOTAL PROTECTED DEBT</div>
-      <div class="kpi-number" id="kpi-debt">$1,845,200.00</div>
-      <div class="kpi-sub">Across 14 registered borrower vaults</div>
-    </div>
-    <div class="kpi-item">
-      <div class="kpi-label">FLASH REPAYMENT SOURCING</div>
-      <div class="kpi-number">AAVE V3 POOL</div>
-      <div class="kpi-sub">0.05% protocol flash fee · Atomic batching</div>
-    </div>
-    <div class="kpi-item">
-      <div class="kpi-label">RESTORE SUCCESS RATE</div>
-      <div class="kpi-number text-accent">100.0%</div>
-      <div class="kpi-sub">48/48 dry-run simulations passed</div>
-    </div>
-    <div class="kpi-item">
-      <div class="kpi-label">AVERAGE RESCUE LATENCY</div>
-      <div class="kpi-number">1.18s</div>
-      <div class="kpi-sub">Single Arbitrum L2 block execution</div>
-    </div>
-  </section>
+  <div class="page">
 
-  <!-- Main Asymmetric Grid -->
-  <main class="grid-container">
+    <div class="info-banner">
+      <span>ℹ️</span>
+      <span>
+        This console is a thin operator UI over the live FastAPI backend. Every panel below calls a real endpoint
+        (shown in each card's subtitle) and renders the <b>actual response</b> — nothing here is scripted or faked.
+        Full endpoint list at <a href="/docs" target="_blank" style="color:#3d3596;">/docs</a>.
+      </span>
+    </div>
 
-    <!-- LEFT COLUMN: Position Inspector & Restructuring Engine (62%) -->
-    <div class="column-left">
+    <!-- Live system KPIs (GET /metrics) -->
+    <section class="kpi-row">
+      <div class="kpi-card">
+        <div class="kpi-label">Registered Positions</div>
+        <div class="kpi-value" id="kpi-registered">—</div>
+        <div class="kpi-sub">Borrowers with signed RiskParams on file</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Assessed / Declined</div>
+        <div class="kpi-value" id="kpi-assessed">—</div>
+        <div class="kpi-sub">Pipeline runs this session</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">In-Flight Rescues</div>
+        <div class="kpi-value" id="kpi-inflight">—</div>
+        <div class="kpi-sub">Locked to prevent double-submission</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Latest Arbitrum Block</div>
+        <div class="kpi-value mono" id="kpi-block">—</div>
+        <div class="kpi-sub">Live, polled from the keeper's RPC</div>
+      </div>
+    </section>
 
-      <!-- Borrower Account Cockpit -->
-      <div class="panel">
-        <div class="panel-header">
-          <div class="panel-title">POSITION RISK INSPECTOR</div>
-          <div class="panel-actions">
-            <span class="badge" id="position-state-badge">STATE: ASSESSING</span>
-            <span class="timestamp-tag" id="last-poll-time">POLL: 16:54:10 UTC</span>
+    <div class="grid">
+
+      <!-- LEFT COLUMN -->
+      <div class="col">
+
+        <!-- Position Inspector -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Position Inspector</div>
+              <div class="card-title-sub">GET /positions/{borrower} — live Aave V3 read</div>
+            </div>
+            <span class="badge" id="position-state-badge">STATE: —</span>
           </div>
-        </div>
-
-        <div class="panel-body">
-          <!-- Borrower Selector Form -->
-          <div class="address-input-bar">
-            <div class="input-prefix">BORROWER</div>
-            <input type="text" id="borrower-input" class="mono-input" value="0x742d35Cc6634C0532925a3b844Bc454e4438f44e" spellcheck="false" />
-            <button class="btn btn-secondary" onclick="loadPosition()">QUERY</button>
-            <button class="btn btn-secondary" onclick="generateSimulatedPosition()">RANDOM RISK</button>
-          </div>
-
-          <!-- Position Telemetry Grid -->
-          <div class="telemetry-grid">
-            <div class="telemetry-box">
-              <span class="t-label">CURRENT HEALTH FACTOR</span>
-              <span class="t-val t-danger" id="current-hf">1.1182</span>
-              <span class="t-sub text-danger">⚠️ BELOW TRIGGER (1.1500)</span>
+          <div class="card-body">
+            <div class="field-row">
+              <input type="text" id="borrower-input" class="input" spellcheck="false"
+                     value="0x742d35Cc6634C0532925a3b844Bc454e4438f44e" placeholder="0x… borrower address" />
+              <button class="btn btn-primary" onclick="loadPosition()" id="btn-load">Load Position</button>
             </div>
 
-            <div class="telemetry-box">
-              <span class="t-label">TARGET HF ($HF_{target}$)</span>
-              <span class="t-val text-accent" id="target-hf">1.2500</span>
-              <span class="t-sub">Base 1.25 + Vol Adjust (0.00)</span>
+            <div class="stat-grid" style="margin-top:18px;">
+              <div class="stat-tile">
+                <div class="t-label">Health Factor</div>
+                <div class="t-val" id="current-hf">—</div>
+                <div class="t-sub" id="hf-sub"></div>
+              </div>
+              <div class="stat-tile">
+                <div class="t-label">Registered With Keeper</div>
+                <div class="t-val" id="is-registered">—</div>
+                <div class="t-sub">Has signed RiskParams on file</div>
+              </div>
+              <div class="stat-tile">
+                <div class="t-label">Total Collateral</div>
+                <div class="t-val" id="collateral-usd">—</div>
+                <div class="t-sub">USD, oracle-priced</div>
+              </div>
+              <div class="stat-tile">
+                <div class="t-label">Outstanding Debt</div>
+                <div class="t-val" id="debt-usd">—</div>
+                <div class="t-sub">USD, oracle-priced</div>
+              </div>
             </div>
 
-            <div class="telemetry-box">
-              <span class="t-label">TOTAL COLLATERAL</span>
-              <span class="t-val" id="collateral-usd">$300,000.00</span>
-              <span class="t-sub mono" id="collateral-asset-info">100.00 WETH ($3,000/ETH)</span>
-            </div>
-
-            <div class="telemetry-box">
-              <span class="t-label">OUTSTANDING DEBT</span>
-              <span class="t-val" id="debt-usd">$200,000.00</span>
-              <span class="t-sub mono">USDC (Aave v3 Debt Token)</span>
-            </div>
-          </div>
-
-          <!-- Real-time Health Factor Visual Gauge -->
-          <div class="gauge-section">
-            <div class="gauge-meta">
-              <span>LIQUIDATION THRESHOLD (1.00)</span>
-              <span>TRIGGER (1.15)</span>
-              <span>TARGET (1.25)</span>
-              <span>SAFE ZONE (>1.50)</span>
-            </div>
-            <div class="gauge-bar-track">
-              <div class="gauge-zone zone-danger" style="width: 25%;"></div>
-              <div class="gauge-zone zone-warning" style="width: 20%;"></div>
-              <div class="gauge-zone zone-safe" style="width: 55%;"></div>
-              <!-- Marker for current HF -->
-              <div class="gauge-marker" id="hf-marker" style="left: 28%;" title="Current HF: 1.118">
-                <div class="marker-arrow">▲</div>
-                <div class="marker-tag">1.118</div>
+            <div class="gauge-wrap">
+              <div class="gauge-labels">
+                <span>Liquidation (1.00)</span>
+                <span>Trigger zone</span>
+                <span>Safe (&gt;1.50)</span>
+              </div>
+              <div class="gauge-track">
+                <div class="gauge-seg seg-danger" style="width:25%"></div>
+                <div class="gauge-seg seg-warning" style="width:20%"></div>
+                <div class="gauge-seg seg-safe" style="width:55%"></div>
+                <div class="gauge-marker" id="hf-marker" style="left:15%">
+                  <div class="pin"></div>
+                  <div class="tag" id="hf-marker-tag">—</div>
+                </div>
               </div>
             </div>
           </div>
-
         </div>
+
+        <!-- Decision Pipeline -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Decision Pipeline</div>
+              <div class="card-title-sub">POST /positions/{borrower}/assessment — risk → sizing → selection → viability</div>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="pipeline">
+              <div class="pstep done">
+                <div class="pstep-num">1</div>
+                <div><div class="pstep-title">Monitor & risk</div><div class="pstep-desc">Reads live HF, sets a dynamic target from recent volatility</div></div>
+              </div>
+              <div class="pstep done">
+                <div class="pstep-num">2</div>
+                <div><div class="pstep-title">Size the repayment (Δd*)</div><div class="pstep-desc">Minimum debt repay needed to reach the target HF</div></div>
+              </div>
+              <div class="pstep done">
+                <div class="pstep-num">3</div>
+                <div><div class="pstep-title">Select collateral</div><div class="pstep-desc">Cheapest eligible asset to source the swap, via live Uniswap quotes</div></div>
+              </div>
+              <div class="pstep done">
+                <div class="pstep-num">4</div>
+                <div><div class="pstep-title">Viability gate</div><div class="pstep-desc">Declines unless the rescue is economically worth it</div></div>
+              </div>
+            </div>
+
+            <div class="btn-row">
+              <button class="btn btn-secondary btn-block" onclick="runAssessment()" id="btn-assess">Run Dry-Run Assessment</button>
+              <button class="btn btn-primary btn-block" onclick="runProtect()" id="btn-protect">Execute Protection</button>
+            </div>
+
+            <div class="result-panel empty" id="assessment-result">Run an assessment to see the live pipeline output here.</div>
+          </div>
+        </div>
+
+        <!-- Activity Log -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Activity Log</div>
+              <div class="card-title-sub">Real request/response trail for this session</div>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="clearLog()">Clear</button>
+          </div>
+          <div class="card-body tight">
+            <div class="log-box" id="activity-log"></div>
+          </div>
+        </div>
+
       </div>
 
-      <!-- Autonomous Atomic Restructuring Pipeline -->
-      <div class="panel">
-        <div class="panel-header">
-          <div class="panel-title">ATOMIC RESTRUCTURING PIPELINE (PS-11)</div>
-          <div class="pipeline-status-tag" id="pipeline-status">READY FOR EXECUTION</div>
+      <!-- RIGHT COLUMN -->
+      <div class="col">
+
+        <!-- Risk Parameters (signed by borrower) -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Risk Parameters</div>
+              <div class="card-title-sub">EIP-712 signed by the borrower — bounds every action</div>
+            </div>
+            <span class="badge accent">On-chain bounded</span>
+          </div>
+          <div class="card-body">
+            <div class="param-grid">
+              <div>
+                <label class="field-label">HF Trigger</label>
+                <input class="input" id="p-trigger" value="11500" />
+              </div>
+              <div>
+                <label class="field-label">HF Target (base)</label>
+                <input class="input" id="p-target" value="12500" />
+              </div>
+              <div>
+                <label class="field-label">HF Target (max)</label>
+                <input class="input" id="p-targetmax" value="15000" />
+              </div>
+              <div>
+                <label class="field-label">Vol Coefficient K</label>
+                <input class="input" id="p-volk" value="0" />
+              </div>
+              <div>
+                <label class="field-label">Max Slippage (bps)</label>
+                <input class="input" id="p-slippage" value="100" />
+              </div>
+              <div>
+                <label class="field-label">Max Cost (bps)</label>
+                <input class="input" id="p-cost" value="200" />
+              </div>
+              <div class="span-2">
+                <label class="field-label">Allowed Collateral</label>
+                <select class="input" id="p-collateral">
+                  <option value="0x82aF49447D8a07e3bd95BD0d56f35241523fBab1">WETH</option>
+                  <option value="0x5979D7b546E38E414F7E9822514be443A4800529">wstETH</option>
+                </select>
+              </div>
+            </div>
+            <div class="param-row" style="margin-top:14px;">
+              <span class="p-key">Signature</span>
+              <span class="p-val mono" style="color:var(--text-muted);">demo signature (contract verifies on-chain)</span>
+            </div>
+          </div>
         </div>
 
-        <div class="panel-body">
-          <div class="flow-container">
-            <div class="flow-step completed" id="step-1">
-              <div class="step-num">01</div>
-              <div class="step-content">
-                <div class="step-title">MONITOR & PREDICT</div>
-                <div class="step-desc">HF ≤ 1.15 detected · Volatility σ = 2.41%</div>
-              </div>
-              <div class="step-badge">[OK]</div>
+        <!-- Circuit Breaker -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Circuit Breaker</div>
+              <div class="card-title-sub">GET /metrics · POST /breaker/reset</div>
             </div>
-
-            <div class="flow-step completed" id="step-2">
-              <div class="step-num">02</div>
-              <div class="step-content">
-                <div class="step-title">CALCULATE OPTIMAL REPAY (Δd*)</div>
-                <div class="step-desc" id="optimal-repay-desc">Optimal Repayment = 31,578.95 USDC</div>
-              </div>
-              <div class="step-badge">[CALCULATED]</div>
-            </div>
-
-            <div class="flow-step pending" id="step-3">
-              <div class="step-num">03</div>
-              <div class="step-content">
-                <div class="step-title">FLASH LIQUIDITY & REPAY</div>
-                <div class="step-desc">Aave v3 Flashloan 31,578.95 USDC → Pool.repay()</div>
-              </div>
-              <div class="step-badge">[READY]</div>
-            </div>
-
-            <div class="flow-step pending" id="step-4">
-              <div class="step-num">04</div>
-              <div class="step-content">
-                <div class="step-title">WITHDRAW & SWAP (UNISWAP V3)</div>
-                <div class="step-desc">Unlock 10.63 WETH → Swap for 31,594.74 USDC</div>
-              </div>
-              <div class="step-badge">[SLIPPAGE CAP 1.0%]</div>
-            </div>
-
-            <div class="flow-step pending" id="step-5">
-              <div class="step-num">05</div>
-              <div class="step-content">
-                <div class="step-title">REPAY FLASH LOAN & RESTORE</div>
-                <div class="step-desc">Return Flash Liquidity + 0.05% fee → HF ≥ 1.25</div>
-              </div>
-              <div class="step-badge">[GUARDRAIL VERIFIED]</div>
-            </div>
+            <span class="badge safe" id="breaker-badge">NORMAL</span>
           </div>
-
-          <!-- Execution Controls -->
-          <div class="execution-action-bar">
-            <div class="execution-params-summary">
-              <span class="text-label">ESTIMATED PROTOCOL COST:</span>
-              <strong class="text-val">~0.15% (47.36 USD)</strong>
-              <span class="text-label" style="margin-left: 1rem;">GAS ESTIMATE:</span>
-              <strong class="text-val">142,800 units ($0.00018 ETH)</strong>
+          <div class="card-body">
+            <div class="stat-grid">
+              <div class="stat-tile">
+                <div class="t-label">Consecutive Failures</div>
+                <div class="t-val" id="breaker-fails">—</div>
+              </div>
+              <div class="stat-tile">
+                <div class="t-label">In-Flight Locks</div>
+                <div class="t-val" id="breaker-locks">—</div>
+              </div>
             </div>
-
-            <div class="action-btn-group">
-              <button class="btn btn-outline" id="btn-assess" onclick="triggerDryRun()">1. DRY-RUN SIMULATION</button>
-              <button class="btn btn-primary" id="btn-protect" onclick="executeProtection()">2. EXECUTE RESTRUCTURING</button>
-            </div>
+            <button class="btn btn-secondary btn-block" style="margin-top:14px;" onclick="resetBreaker()">Reset Breaker</button>
           </div>
-
-          <!-- Simulation & Execution Output Console -->
-          <div class="console-box" id="exec-console">
-            <div class="console-header">
-              <span>EXECUTION TELEMETRY STREAM</span>
-              <button class="btn-xs" onclick="clearConsole()">CLEAR</button>
-            </div>
-            <div class="console-logs mono" id="console-logs">
-              <div class="log-line text-muted">[16:53:01.002] Console initialized. Connected to FastAPI Keeper Engine at http://127.0.0.1:8000</div>
-              <div class="log-line">[16:53:01.045] Target Vault contract: 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0</div>
-              <div class="log-line text-accent">[16:54:10.890] Borrower 0x742d...44e registered with signed EIP-712 RiskParams. HF = 1.118 (CRITICAL).</div>
-            </div>
-          </div>
-
         </div>
+
+        <!-- Keeper Config -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Keeper Config</div>
+              <div class="card-title-sub">GET / PUT /config — live tunables, no restart</div>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="param-grid">
+              <div>
+                <label class="field-label">Poll Interval (s)</label>
+                <input class="input" id="cfg-poll" />
+              </div>
+              <div>
+                <label class="field-label">Breaker Threshold</label>
+                <input class="input" id="cfg-breaker" />
+              </div>
+              <div>
+                <label class="field-label">Cooldown (s)</label>
+                <input class="input" id="cfg-cooldown" />
+              </div>
+              <div>
+                <label class="field-label">Max Sim Bumps</label>
+                <input class="input" id="cfg-bumps" />
+              </div>
+            </div>
+            <div class="toggle-row" style="margin-top:14px;">
+              <label class="field-label" style="margin-bottom:0;">Autonomous Worker Enabled</label>
+              <div class="switch" id="cfg-auto-switch" onclick="toggleAuto()"><div class="knob"></div></div>
+            </div>
+            <button class="btn btn-primary btn-block" style="margin-top:14px;" onclick="saveConfig()">Save Config</button>
+          </div>
+        </div>
+
+        <!-- How the rescue works (static explainer) -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">How a Rescue Executes</div>
+          </div>
+          <div class="card-body">
+            <div class="invariant-list">
+              <div class="invariant-item"><span class="check">✓</span><span class="txt"><b>Flash-loan</b> the debt asset from Aave — no capital required upfront.</span></div>
+              <div class="invariant-item"><span class="check">✓</span><span class="txt"><b>Repay</b> the borrower's debt, improving HF immediately.</span></div>
+              <div class="invariant-item"><span class="check">✓</span><span class="txt"><b>Pull &amp; swap</b> just enough collateral (via aToken allowance only — never a private key) to cover the flash loan + fee.</span></div>
+              <div class="invariant-item"><span class="check">✓</span><span class="txt"><b>Return leftovers</b> to the borrower, then a <b>HealthGuard</b> check: if HF, debt, leverage, or cost aren't strictly better, the entire transaction reverts.</span></div>
+            </div>
+          </div>
+        </div>
+
       </div>
-
     </div>
 
-    <!-- RIGHT COLUMN: EIP-712 Guardrails, Breaker & Keeper Log (38%) -->
-    <div class="column-right">
-
-      <!-- Borrower Guardrail Authorization (EIP-712) -->
-      <div class="panel">
-        <div class="panel-header">
-          <div class="panel-title">EIP-712 RISK PARAMETERS (FR-13)</div>
-          <span class="badge badge-accent">ON-CHAIN BOUNDED</span>
-        </div>
-
-        <div class="panel-body">
-          <div class="card-info-text">
-            The decision engine is bounded by the borrower's cryptographic signature. The smart contract validates every parameter on-chain.
-          </div>
-
-          <div class="param-row-dense">
-            <span class="p-key">hfTriggerBps</span>
-            <span class="p-val mono">11,500 (1.15)</span>
-          </div>
-          <div class="param-row-dense">
-            <span class="p-key">hfTargetBaseBps</span>
-            <span class="p-val mono">12,500 (1.25)</span>
-          </div>
-          <div class="param-row-dense">
-            <span class="p-key">volCoeffK</span>
-            <span class="p-val mono">7,500 (0.75)</span>
-          </div>
-          <div class="param-row-dense">
-            <span class="p-key">maxSlippageBps</span>
-            <span class="p-val mono">100 (1.00%)</span>
-          </div>
-          <div class="param-row-dense">
-            <span class="p-key">maxCostBps</span>
-            <span class="p-val mono">500 (5.00%)</span>
-          </div>
-          <div class="param-row-dense">
-            <span class="p-key">allowedCollaterals</span>
-            <span class="p-val mono">[0x82aF...Bab1 (WETH)]</span>
-          </div>
-          <div class="param-row-dense">
-            <span class="p-key">nonce</span>
-            <span class="p-val mono">1</span>
-          </div>
-          <div class="param-row-dense">
-            <span class="p-key">deadline</span>
-            <span class="p-val mono">2,000,000,000</span>
-          </div>
-
-          <div class="sig-display mono" id="sig-display">
-            SIG: 0x8a9cf27183e8b8c738f19283719284729183928192839182938192839182938172938192839182938192839182938192839182938192839182938192839182931c
-          </div>
-        </div>
-      </div>
-
-      <!-- Circuit Breaker & Safety Invariants -->
-      <div class="panel">
-        <div class="panel-header">
-          <div class="panel-title">CIRCUIT BREAKER & INVARIANTS</div>
-          <span class="badge" id="breaker-status-badge">ACTIVE</span>
-        </div>
-
-        <div class="panel-body">
-          <div class="breaker-controls">
-            <div class="breaker-stat">
-              <span class="t-label">CONSECUTIVE REVERTS</span>
-              <span class="b-val mono" id="consecutive-fails">0 / 3</span>
-            </div>
-            <div class="breaker-stat">
-              <span class="t-label">IN-FLIGHT MUTEX</span>
-              <span class="b-val mono" id="mutex-status">UNLOCKED</span>
-            </div>
-            <div class="breaker-btn-wrap">
-              <button class="btn btn-danger btn-sm" onclick="tripBreaker()">TRIP BREAKER</button>
-              <button class="btn btn-secondary btn-sm" onclick="resetBreaker()">RESET BREAKER</button>
-            </div>
-          </div>
-
-          <div class="invariants-list">
-            <div class="inv-item">
-              <span class="inv-check">✓</span>
-              <span><strong>Invariant 1:</strong> Restructuring never leaves $HF_{after} < HF_{target}$</span>
-            </div>
-            <div class="inv-item">
-              <span class="inv-check">✓</span>
-              <span><strong>Invariant 2:</strong> Flash loan balance must net zero at callback completion</span>
-            </div>
-            <div class="inv-item">
-              <span class="inv-check">✓</span>
-              <span><strong>Invariant 3:</strong> Total slippage & fees cannot exceed $maxCostBps$</span>
-            </div>
-            <div class="inv-item">
-              <span class="inv-check">✓</span>
-              <span><strong>Invariant 4:</strong> In-flight lock prevents concurrent double-submissions</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Real-time Keeper Event Log -->
-      <div class="panel">
-        <div class="panel-header">
-          <div class="panel-title">KEEPER AUDIT LEDGER</div>
-          <span class="badge">LIVE FEED</span>
-        </div>
-        <div class="panel-body ledger-body mono" id="audit-ledger">
-          <div class="ledger-row">
-            <span class="l-time">16:54:11</span>
-            <span class="l-event text-accent">ASSESSMENT_COMPLETED</span>
-            <span class="l-detail">borrower=0x742d... viable=true cost=15bps</span>
-          </div>
-          <div class="ledger-row">
-            <span class="l-time">16:54:02</span>
-            <span class="l-event">CHAIN_POLL</span>
-            <span class="l-detail">block=312894102 debt=$200,000.00</span>
-          </div>
-          <div class="ledger-row">
-            <span class="l-time">16:53:50</span>
-            <span class="l-event">HEALTH_TICK</span>
-            <span class="l-detail">status=ok rpc=arbitrum-one</span>
-          </div>
-        </div>
-      </div>
-
-    </div>
-
-  </main>
-
-  <!-- Command Palette Modal (⌘K) -->
-  <div class="modal-overlay" id="cmd-modal" onclick="closeCmdPalette(event)">
-    <div class="cmd-palette-box">
-      <div class="cmd-search-wrap">
-        <span class="cmd-prompt">▲</span>
-        <input type="text" id="cmd-input" placeholder="Type a command or address..." autofocus />
-        <span class="cmd-esc">ESC</span>
-      </div>
-      <div class="cmd-results">
-        <div class="cmd-item" onclick="executeCmd('load-at-risk')">
-          <span class="cmd-name">Load At-Risk Borrower (HF = 1.118)</span>
-          <span class="cmd-key">0x742d...44e</span>
-        </div>
-        <div class="cmd-item" onclick="executeCmd('load-healthy')">
-          <span class="cmd-name">Load Healthy Borrower (HF = 1.620)</span>
-          <span class="cmd-key">0x12a9...3b9</span>
-        </div>
-        <div class="cmd-item" onclick="executeCmd('run-sim')">
-          <span class="cmd-name">Trigger Dry-run Simulation</span>
-          <span class="cmd-key">POST /assessment</span>
-        </div>
-        <div class="cmd-item" onclick="executeCmd('execute-restructure')">
-          <span class="cmd-name">Execute Full Restructuring</span>
-          <span class="cmd-key">POST /protect</span>
-        </div>
-        <div class="cmd-item" onclick="executeCmd('reset-breaker')">
-          <span class="cmd-name">Reset Circuit Breaker</span>
-          <span class="cmd-key">POST /breaker/reset</span>
-        </div>
-      </div>
+    <div class="footer-note">
+      Unaudited hackathon PoC — Arbitrum One mainnet-fork tested (13/13 Foundry tests). Non-custodial: the borrower's key never touches the backend.
     </div>
   </div>
 

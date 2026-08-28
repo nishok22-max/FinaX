@@ -20,7 +20,7 @@ from app.config.arbitrum import (
     DEFAULT_GAS_COST_BASE,
     FLASH_PREMIUM_BPS,
 )
-from app.core.models import AssessmentResponse, RiskParams
+from app.core.models import AssessmentResponse, RescuePlan, RiskParams
 from app.core.monitor import PositionMonitor
 from app.core.risk import assess_risk
 from app.core.selector import CollateralSelector
@@ -48,18 +48,18 @@ class AssessmentPipeline:
         self._selector = CollateralSelector(aave, uniswap, oracle, erc20)
         self._vault_address = vault_address
 
-    async def assess(
+    async def evaluate(
         self,
         params: RiskParams,
         *,
         sigma: float | None = None,
         gas_cost_base: int = DEFAULT_GAS_COST_BASE,
-    ) -> AssessmentResponse:
-        """Produce a full assessment for ``params.borrower`` (dry-run only).
+    ) -> tuple[AssessmentResponse, RescuePlan | None]:
+        """Assess ``params.borrower`` and, when actionable, return the executable rescue plan.
 
-        ``sigma`` may be supplied (e.g. from the monitor's rolling window); when omitted it is
-        sampled once from the primary collateral's oracle price, which yields 0 volatility on a
-        single read — deterministic, and the target then rests at the signed floor.
+        Returns ``(response, plan)``: ``plan`` is ``None`` on every decline path (no debt, already
+        safe, no eligible collateral, not economically viable). ``sigma`` may be supplied (e.g. from
+        the monitor's rolling window); when omitted it defaults to 0 (target rests at the floor).
         """
         borrower = params.borrower
         snapshot = await self._monitor.poll_once(borrower, params.hf_trigger_bps)
@@ -83,7 +83,7 @@ class AssessmentPipeline:
                 hf=float("inf"), hf_target=risk.hf_target, repay_amount=0,
                 collateral_asset="", est_cost_bps=0, viable=False,
                 reason="no debt: nothing to protect",
-            )
+            ), None
 
         # --- Sizing (FR-3): candidate Δd* to reach the target ----------------------------
         # Debt asset defaults to the v1 path (USDC); a multi-debt position would iterate.
@@ -104,7 +104,7 @@ class AssessmentPipeline:
                 hf=account.hf, hf_target=risk.hf_target, repay_amount=0,
                 collateral_asset="", est_cost_bps=0, viable=False,
                 reason=sizing.reason or "no repayment required",
-            )
+            ), None
 
         out_needed = sizing.repay_amount + (sizing.repay_amount * FLASH_PREMIUM_BPS) // BPS
 
@@ -121,7 +121,7 @@ class AssessmentPipeline:
                 hf=account.hf, hf_target=risk.hf_target, repay_amount=sizing.repay_amount,
                 collateral_asset="", est_cost_bps=0, viable=False,
                 reason="no eligible collateral (missing aToken allowance or unquotable)",
-            )
+            ), None
 
         # --- Viability (FR-11): economic gate --------------------------------------------
         collateral_reserve = await self._aave.get_reserve_info(best.collateral_asset)
@@ -138,7 +138,7 @@ class AssessmentPipeline:
             borrower, account.hf, risk.hf_target, sizing.repay_amount,
             best.collateral_asset, viability.est_cost_bps, viability.viable,
         )
-        return AssessmentResponse(
+        response = AssessmentResponse(
             hf=account.hf,
             hf_target=risk.hf_target,
             repay_amount=sizing.repay_amount,
@@ -147,6 +147,31 @@ class AssessmentPipeline:
             viable=viability.viable,
             reason=viability.reason,
         )
+        # A plan is only actionable when the economics clear the gate.
+        plan = None
+        if viability.viable:
+            plan = RescuePlan(
+                borrower=borrower,
+                debt_asset=debt_asset,
+                repay_amount=sizing.repay_amount,
+                collateral_asset=best.collateral_asset,
+                fee_tier=best.fee_tier,
+                amount_in=best.amount_in,
+                hf_target_bps=risk.hf_target_bps,
+                max_slippage_bps=params.max_slippage_bps,
+            )
+        return response, plan
+
+    async def assess(
+        self,
+        params: RiskParams,
+        *,
+        sigma: float | None = None,
+        gas_cost_base: int = DEFAULT_GAS_COST_BASE,
+    ) -> AssessmentResponse:
+        """Read-only assessment (returns just the response); see :meth:`evaluate` for the plan."""
+        response, _ = await self.evaluate(params, sigma=sigma, gas_cost_base=gas_cost_base)
+        return response
 
 
 def _infer_debt_asset(params: RiskParams) -> str:
