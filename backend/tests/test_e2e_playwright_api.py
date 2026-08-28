@@ -18,7 +18,6 @@ Test groups
 """
 from __future__ import annotations
 
-import asyncio
 import threading
 from typing import Any
 
@@ -26,14 +25,20 @@ import httpx
 import pytest
 import uvicorn
 from playwright.async_api import APIRequestContext, async_playwright
+
+from app import deps
+from app import observability as obs
+from app.config.settings import settings
+from app.core.breaker import CircuitBreaker
+from app.core.inflight import InFlightRegistry
 from app.core.models import PositionSnapshot, UserAccountData
-from app.core.state import PositionState
+from app.core.protection_service import ProtectionService
+from app.main import app
 
 # ── Fake service wiring (reuse protection_service test helpers) ──────────────
 from tests.test_protection_service import (
     BORROWER,
     WETH,
-    FakeMonitor,
     FakePipeline,
     FakeSimulator,
     FakeSubmitter,
@@ -41,14 +46,6 @@ from tests.test_protection_service import (
     _params,
     _plan,
 )
-
-from app import deps, observability as obs
-from app.config.settings import settings
-from app.core.breaker import CircuitBreaker
-from app.core.inflight import InFlightRegistry
-from app.core.models import PositionSnapshot, UserAccountData
-from app.core.protection_service import ProtectionService
-from app.main import app
 
 pytestmark = pytest.mark.asyncio
 

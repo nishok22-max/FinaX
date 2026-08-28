@@ -143,18 +143,17 @@ async def _mine(w3: Any, tx_hash: Any) -> None:
     await w3.eth.wait_for_transaction_receipt(tx_hash, timeout=30)
 
 
-async def test_pipeline_assesses_real_position(anvil_url: str) -> None:
+async def test_pipeline_assesses_real_position(anvil_url: str, fork_client) -> None:  # type: ignore[no-untyped-def]
     from web3 import AsyncWeb3
 
     from app.chain.aave import AaveClient
-    from app.chain.client import ChainClient
     from app.chain.erc20 import ERC20Client
     from app.chain.oracle import OracleClient
     from app.chain.uniswap import UniswapClient
     from app.core.models import RiskParams
     from app.core.pipeline import AssessmentPipeline
 
-    client = ChainClient(primary_url=anvil_url, fallback_url="")
+    client = fork_client(anvil_url)
     w3 = client.w3
     aave = AaveClient(client)
 

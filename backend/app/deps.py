@@ -31,6 +31,7 @@ class ServiceContainer:
     service: ProtectionService
     worker: Worker
     config: KeeperConfig
+    client: ChainClient
 
 
 def build_container() -> ServiceContainer:
@@ -71,7 +72,7 @@ def build_container() -> ServiceContainer:
         max_simulation_bumps=settings.max_simulation_bumps,
         autonomous_enabled=settings.autonomous_enabled,
     )
-    return ServiceContainer(service=service, worker=worker, config=config)
+    return ServiceContainer(service=service, worker=worker, config=config, client=client)
 
 
 _container: ServiceContainer | None = None
@@ -86,6 +87,14 @@ def get_container() -> ServiceContainer:
 
 def get_service() -> ProtectionService:
     return get_container().service
+
+
+async def close_container() -> None:
+    """Release the container's RPC sessions and drop it (app shutdown)."""
+    global _container
+    if _container is not None:
+        await _container.client.close()
+        _container = None
 
 
 def apply_config(new: KeeperConfig) -> KeeperConfig:

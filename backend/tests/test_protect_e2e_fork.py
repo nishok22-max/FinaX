@@ -73,12 +73,11 @@ async def _mine(w3: Any, tx: Any) -> Any:
     return await w3.eth.wait_for_transaction_receipt(tx, timeout=60)
 
 
-async def test_protect_executes_atomic_rescue(anvil_url: str) -> None:
+async def test_protect_executes_atomic_rescue(anvil_url: str, fork_client) -> None:  # type: ignore[no-untyped-def]
     from eth_account import Account
     from web3 import AsyncWeb3
 
     from app.chain.aave import AaveClient
-    from app.chain.client import ChainClient
     from app.chain.erc20 import ERC20Client
     from app.chain.oracle import OracleClient
     from app.chain.uniswap import UniswapClient
@@ -97,7 +96,7 @@ async def test_protect_executes_atomic_rescue(anvil_url: str) -> None:
     keeper = Account.from_mnemonic(MNEMONIC, account_path="m/44'/60'/0'/0/0")
     borrower_acct = Account.from_mnemonic(MNEMONIC, account_path="m/44'/60'/0'/0/1")
 
-    client = ChainClient(primary_url=anvil_url, fallback_url="")
+    client = fork_client(anvil_url)
     w3 = client.w3
     accounts = await w3.eth.accounts
     assert AsyncWeb3.to_checksum_address(keeper.address) == accounts[0]

@@ -113,10 +113,52 @@ def rpc_url() -> str:
 
 
 @pytest.fixture(scope="session")
-def chain_client(rpc_url: str):  # type: ignore[no-untyped-def]
+async def chain_client(rpc_url: str):  # type: ignore[no-untyped-def]
     if not _web3_importable():
         pytest.skip("web3 not importable in this environment — fork-integration test skipped.")
     from app.chain.client import ChainClient
 
     fallback = os.environ.get("ARBITRUM_RPC_URL_FALLBACK") or settings.arbitrum_rpc_url_fallback
-    return ChainClient(primary_url=rpc_url, fallback_url=fallback)
+    client = ChainClient(primary_url=rpc_url, fallback_url=fallback)
+    try:
+        yield client
+    finally:
+        await client.close()
+
+
+@pytest.fixture
+async def fork_client():  # type: ignore[no-untyped-def]
+    """Factory for fork-test :class:`ChainClient`s, closed at teardown.
+
+    The fork tests point a client at a throwaway anvil URL; closing it keeps web3's per-loop
+    aiohttp sessions from outliving the test and being collected unclosed.
+    """
+    from app.chain.client import ChainClient
+
+    clients: list[ChainClient] = []
+
+    def _make(url: str) -> ChainClient:
+        client = ChainClient(primary_url=url, fallback_url="")
+        clients.append(client)
+        return client
+
+    try:
+        yield _make
+    finally:
+        for client in clients:
+            await client.close()
+
+
+@pytest.fixture(scope="session", autouse=True)
+async def _close_process_wide_chain_client():  # type: ignore[no-untyped-def]
+    """Drop the ``app.chain.client`` singleton's aiohttp sessions when the run ends.
+
+    Routes such as ``/health`` build it lazily; without this the sessions web3 caches per
+    event loop are collected unclosed and aiohttp prints "Unclosed client session".
+    """
+    yield
+    if not _web3_importable():
+        return
+    from app.chain.client import close_client
+
+    await close_client()

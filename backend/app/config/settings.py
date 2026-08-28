@@ -49,5 +49,10 @@ class Settings(BaseSettings):
     autonomous_enabled: bool = Field(default=True, alias="AUTONOMOUS_ENABLED")
     worker_enabled: bool = Field(default=True, alias="WORKER_ENABLED")
 
+    # Local-fork demo aids. Off by default so they can never run in a real
+    # deployment: when enabled, an unsigned protect request is signed server-side
+    # with the well-known anvil mnemonic (see ProtectionService._resolve_demo_signature).
+    demo_mode: bool = Field(default=False, alias="DEMO_MODE")
+
 
 settings = Settings()

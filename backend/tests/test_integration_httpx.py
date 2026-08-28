@@ -2,7 +2,7 @@
 Phase 5 — HTTPX Integration Test Suite
 =======================================
 
-Uses httpx.AsyncClient over FastAPI's ASGI transport (no real TCP port needed).
+Uses FastAPI's TestClient over the ASGI transport (no real TCP port needed).
 Covers every route, validates request/response schemas, and exercises
 the complete service pipeline end-to-end with deterministic fakes.
 
@@ -24,15 +24,19 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-import httpx
 import pytest
 from fastapi.testclient import TestClient
-from app.core.models import PositionSnapshot
-from app.core.state import PositionState
 
+from app import deps
+from app import observability as obs
+from app.config.settings import settings
+from app.core.breaker import CircuitBreaker
+from app.core.inflight import InFlightRegistry
+from app.core.models import PositionSnapshot
+from app.core.protection_service import ProtectionService
+from app.main import app
 from tests.test_protection_service import (
     BORROWER,
-    USDC,
     WETH,
     FakeMonitor,
     FakePipeline,
@@ -42,15 +46,6 @@ from tests.test_protection_service import (
     _params,
     _plan,
 )
-
-from app import deps, observability as obs
-from app.config.settings import settings
-from app.core.breaker import CircuitBreaker
-from app.core.inflight import InFlightRegistry
-from app.core.protection_service import ProtectionService
-from app.main import app
-
-pytestmark = pytest.mark.asyncio
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers & Fixtures

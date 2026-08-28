@@ -1,6 +1,26 @@
+"""Seed *additional* demo borrowers (accounts #2-#4) on the local anvil fork.
+
+Populates a spread of health factors so the console has more than one position
+to look at. Despite this file's former name (``reset_demo_positions.py``) it
+**does not reset anything** - every run supplies more collateral and opens more
+debt on the accounts it touches.
+
+Account #1 is deliberately excluded: it is the primary demo borrower owned by
+``seed_demo.py``. Both scripts used to seed it, and because neither checked for
+existing state, running them together compounded the position (20 WETH, HF 1.80)
+and silently broke the demo. Keep the ownership split - if you need to change
+account #1, use ``seed_demo.py``, which is idempotent.
+
+Usage:
+    python tools/seed_extra_positions.py
+"""
+from __future__ import annotations
+
 import asyncio
-from web3 import AsyncWeb3
+
 from eth_account import Account
+from web3 import AsyncWeb3
+
 from app.config.settings import settings
 
 MNEMONIC = "test test test test test test test test test test test junk"
@@ -77,8 +97,9 @@ async def seed():
     aweth = w3.eth.contract(address=res_data[8], abi=_ATOKEN_ABI)
     vault_addr = settings.vault_address or "0xd581A6375045dd645aF24e3D6D1bc8864F4fA708"
     
+    # Account 1 is intentionally absent - it belongs to seed_demo.py. Adding it
+    # back here re-creates the double-seeding bug that broke the demo position.
     configs = [
-        (1, 5.0, 93),   # Account 1: HF ~ 1.09
         (2, 8.0, 94.5), # Account 2: HF ~ 1.07
         (3, 3.0, 92),   # Account 3: HF ~ 1.10
         (4, 6.0, 80),   # Account 4: HF ~ 1.31

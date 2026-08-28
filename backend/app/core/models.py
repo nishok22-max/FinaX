@@ -12,7 +12,7 @@ Two families:
 from __future__ import annotations
 
 from eth_utils.address import to_checksum_address
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.config.arbitrum import AAVE_BASE_CURRENCY_DECIMALS, BPS, WAD
 from app.core.state import (
@@ -52,6 +52,22 @@ class RiskParams(BaseModel):
     def _checksum_collaterals(cls, v: list[str]) -> list[str]:
         return [to_checksum_address(a) for a in v]
 
+    @model_validator(mode="after")
+    def _target_band_ordered(self) -> RiskParams:
+        """The signed HF band must be ordered: base is the floor, max the ceiling.
+
+        ``assess_risk`` raises ``ValueError`` when ``max_bps < base_bps``, which was
+        uncaught on the assessment/protect routes and surfaced as a 500. Rejecting
+        the input here returns a 422 instead. This validates the band only - the
+        clamp itself (the HF-target formula) is untouched.
+        """
+        if self.hf_target_max_bps < self.hf_target_base_bps:
+            raise ValueError(
+                "hfTargetMaxBps must be >= hfTargetBaseBps "
+                f"(got max={self.hf_target_max_bps}, base={self.hf_target_base_bps})"
+            )
+        return self
+
     def to_solidity_tuple(
         self,
     ) -> tuple[str, int, int, int, int, int, int, list[str], int, int]:
@@ -90,6 +106,26 @@ class ProtectRequest(BaseModel):
 
     params: RiskParams
     signature: str  # borrower EIP-712 signature (0x-hex)
+
+    @field_validator("signature")
+    @classmethod
+    def _valid_hex_signature(cls, v: str) -> str:
+        """Reject anything ``bytes.fromhex`` would choke on downstream.
+
+        The simulator and submitter both call ``bytes.fromhex(signature)``; an
+        odd-length or non-hex string raised an uncaught ``ValueError`` there and
+        surfaced as a 500 with a traceback. Validating here turns it into a 422.
+        An all-zero signature is allowed through on purpose - the vault rejects it
+        at ``ECDSA.recover``, which is a meaningful thing to demonstrate.
+        """
+        body = v.removeprefix("0x")
+        if len(body) % 2 != 0:
+            raise ValueError("signature must have an even number of hex digits")
+        try:
+            bytes.fromhex(body)
+        except ValueError as exc:
+            raise ValueError("signature must be 0x-prefixed hexadecimal") from exc
+        return v
 
 
 class AssessmentResponse(BaseModel):
@@ -265,6 +301,10 @@ class ProtectResponse(BaseModel):
     tx_hash: str | None = None
     assessment: AssessmentResponse | None = None
     reason: str | None = None
+    via_fallback: bool = False
+    """True when HF was restored by the submitter's direct-repay fallback rather than
+    by the vault's atomic ``executeProtection``. Surfaced so the UI never reports a
+    plain Aave repay as an atomic flash-loan rescue."""
 
 
 class RescuePlan(BaseModel):
@@ -299,6 +339,10 @@ class SubmissionResult(BaseModel):
     state: PositionState  # RESTORED or REVERTED
     hf_after: float | None = None
     gas_used: int | None = None
+    via_fallback: bool = False
+    """Set when the vault's ``executeProtection`` could not execute and the submitter
+    fell back to a direct ``Pool.repay``. The HF improvement is real, but no flash
+    loan, collateral swap, or HealthGuard check took place."""
 
 
 class KeeperConfig(BaseModel):

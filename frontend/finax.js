@@ -101,9 +101,16 @@ async function pollHealth() {
     document.getElementById("cc-block").textContent = data.block_number ? `block ${data.block_number.toLocaleString()}` : "block —";
     document.getElementById("sys-rpc").textContent = data.rpc_connected ? "CONNECTED" : "DOWN";
   } catch (err) {
+    // Clear the cached health too. Leaving it set made renderSecurity() keep
+    // showing "RPC CONNECTION: CONNECTED" in green while the backend was down.
+    state.health = null;
     const chip = document.getElementById("chip-system-status");
     chip.className = "chip chip-status bad";
     document.getElementById("txt-system-status").textContent = "UNREACHABLE";
+    document.getElementById("cc-rpc").textContent = "UNREACHABLE";
+    document.getElementById("cc-block").textContent = "block —";
+    document.getElementById("sys-rpc").textContent = "UNREACHABLE";
+    renderSecurity();
   }
 }
 
@@ -115,7 +122,11 @@ async function pollMetrics() {
     state.metrics = data;
 
     document.getElementById("cc-breaker").textContent = data.breaker_paused ? "PAUSED" : "ARMED";
-    document.getElementById("cc-breaker-sub").textContent = `${data.breaker_consecutive_failures} / 3 failures`;
+    // Threshold comes from /config (and is editable in the System tab), so it must
+    // not be hardcoded here - setting it to 5 used to still display "... / 3".
+    const breakerMax = state.config?.breaker_max_consecutive_failures ?? "?";
+    document.getElementById("cc-breaker-sub").textContent =
+      `${data.breaker_consecutive_failures} / ${breakerMax} failures`;
     document.getElementById("sys-breaker").textContent = data.breaker_paused ? "PAUSED" : "ARMED";
     document.getElementById("sys-inflight").textContent = data.in_flight_borrowers.length;
     document.getElementById("sys-keeper").textContent = state.config?.autonomous_enabled ? "RUNNING" : "MANUAL";
@@ -575,16 +586,36 @@ async function runFullCheck() {
       body: JSON.stringify(buildParamsPayload(addr)),
     });
     const protectData = await protectRes.json();
+    // This was the only fetch in the file without a status check. On a 4xx/5xx the
+    // body carries `detail` and no `state`, so the UI marked SIMULATE as PASS and
+    // then reported `state "undefined"` - a backend failure shown as a good dry-run.
+    if (!protectRes.ok) {
+      throw new Error(
+        protectData.detail ? JSON.stringify(protectData.detail) : `HTTP ${protectRes.status}`
+      );
+    }
     state.protectResult = protectData;
 
-    if (protectData.state === "DECLINED" && protectData.reason && protectData.reason.includes("simulation")) {
+    const declinedReason = protectData.reason || "";
+    if (protectData.state === "DECLINED" && declinedReason.includes("simulation")) {
       setFlow(5, "failed", "REVERTED");
       setFlow(6, "skipped", "SKIPPED");
       setFlow(7, "skipped", "SKIPPED");
       markAtomic(["flashloan"], "fail");
-      showExecResult(explainRevert(protectData.reason, addr));
+      showExecResult(explainRevert(declinedReason, addr));
       return;
     }
+    // Breaker-paused, in-flight, and viability declines never reach the simulator.
+    // Marking step 5 PASS for those claimed a dry-run that never ran.
+    if (protectData.state !== "RESTORED" && !protectData.submitted) {
+      setFlow(5, "skipped", "NOT RUN");
+      setFlow(6, "skipped", "SKIPPED");
+      setFlow(7, "skipped", "SKIPPED");
+      showExecResult(`Stopped before simulation - ${declinedReason || protectData.state}.`);
+      renderAssistant();
+      return;
+    }
+
     setFlow(5, "done", "PASS");
     setFlow(6, "active", "RUNNING");
     await sleep(250);
@@ -592,13 +623,26 @@ async function runFullCheck() {
     if (protectData.state === "RESTORED") {
       setFlow(6, "done", "DONE");
       setFlow(7, "done", "RESTORED");
-      markAtomic(["flashloan", "repay", "release", "swap", "flashrepay", "healthcheck", "restored"], "ok");
-      showExecResult(`Position restored. Tx: ${protectData.tx_hash || "—"}`);
+      if (protectData.via_fallback) {
+        // HF really did improve, but via a direct Aave repay - no flash loan, no
+        // swap, no HealthGuard. Never present that as the atomic vault rescue.
+        markAtomic(["repay"], "ok");
+        markAtomic(["flashloan", "release", "swap", "flashrepay", "healthcheck"], "fail");
+        setFlow(7, "declined", "PARTIAL");
+        showExecResult(
+          `Health factor restored, but NOT by the atomic vault path. ${protectData.reason || ""} ` +
+          `Only the debt repayment executed - no flash loan, collateral swap, or HealthGuard check. ` +
+          `Tx: ${protectData.tx_hash || "—"}`
+        );
+      } else {
+        markAtomic(["flashloan", "repay", "release", "swap", "flashrepay", "healthcheck", "restored"], "ok");
+        showExecResult(`Position restored by the atomic vault rescue. Tx: ${protectData.tx_hash || "—"}`);
+      }
     } else {
       setFlow(6, "declined", protectData.state);
       setFlow(7, "skipped", "SKIPPED");
       markAtomic(["flashloan"], protectData.submitted ? "ok" : "pending");
-      showExecResult(`Execution stopped in state "${protectData.state}": ${protectData.reason || "see technical details"}.`);
+      showExecResult(`Execution stopped in state "${protectData.state}": ${declinedReason || "see technical details"}.`);
     }
     renderAssistant();
   } catch (err) {
@@ -708,29 +752,42 @@ function renderAssistant() {
   const currentCollat = p.collateral_usd || 0;
   const currentEquity = Math.max(0, currentCollat - currentDebt);
 
-  // If assessment exists and is viable, compute exact forecasted future metrics
-  let repayUsd = 0;
-  let targetHf = a ? a.hf_target : 1.25;
-  let estCostBps = a ? a.est_cost_bps : 8;
-  let collatSymbol = a && a.collateral_asset ? symbolOf(a.collateral_asset) : "WETH";
-
-  if (a && a.repay_amount) {
-    repayUsd = a.repay_amount / 1e6;
-  } else if (currentDebt > 0 && currentHf && currentHf < 1.15) {
-    // Sizing formula approximation if assessment not yet triggered
-    const targetWad = 1.25;
-    const lt = 0.825;
-    const denom = targetWad - 1.01 * lt;
-    const num = targetWad * currentDebt - currentCollat * lt;
-    repayUsd = Math.max(0, num / denom);
+  // Every figure below must come from a real assessment. Earlier revisions fell
+  // back to invented constants (8 bps, target 1.25, LT 0.825) and re-implemented
+  // the sizing formula in the browser, rendering guesses in the same visual
+  // language as live data - directly contradicting this file's own contract that
+  // no financial logic is duplicated here. With no assessment we show nothing.
+  const hasAssessment = !!(a && a.repay_amount);
+  if (!a) {
+    el.innerHTML = `
+      <div class="asst-hero">
+        <div class="asst-hero-left">
+          <div class="asst-hero-title">Position Analysis for <span class="mono">${p.borrower.slice(0, 8)}...${p.borrower.slice(-6)}</span></div>
+          <div class="asst-hero-desc">Risk Status: <strong class="badge ${riskLevelFor(p.state).cls}">${riskLevelFor(p.state).label}</strong> (Backend State: <code class="mono">${p.state}</code>)</div>
+        </div>
+      </div>
+      <p class="muted" style="margin-top:14px;">Health factor <span class="mono">${fmtHf(p.hf)}</span>,
+      collateral <span class="mono">${fmtUsd(currentCollat)}</span>,
+      debt <span class="mono">${fmtUsd(currentDebt)}</span>.</p>
+      <p class="muted">Run a dry-run assessment on the Protection tab to produce the rescue plan.
+      No sizing, cost, or forecast figures are shown until the backend has computed them.</p>`;
+    return;
   }
+
+  const repayUsd = hasAssessment ? a.repay_amount / 1e6 : 0;
+  const targetHf = a.hf_target;
+  const estCostBps = a.est_cost_bps;
+  const collatSymbol = a.collateral_asset ? symbolOf(a.collateral_asset) : "—";
 
   const collatSpent = repayUsd * (1 + (estCostBps / 10000));
   const futureDebt = Math.max(0, currentDebt - repayUsd);
   const futureCollat = Math.max(0, currentCollat - collatSpent);
   const futureHf = currentDebt > 0 && repayUsd > 0 ? targetHf : (currentDebt === 0 ? "∞" : fmtHf(currentHf));
   const futureEquity = Math.max(0, futureCollat - futureDebt);
-  const penaltyAvoided = currentDebt * 0.10; // 10% Aave liquidation penalty saved
+  // Illustrative only: Aave's liquidation bonus is per-reserve (the backend models
+  // it as liq_bonus_bps) and is not exposed on AssessmentResponse, so this uses a
+  // nominal 10% and is labelled as an estimate wherever it is displayed.
+  const penaltyAvoided = currentDebt * 0.10;
   const interventionCost = collatSpent - repayUsd;
   const netBenefit = Math.max(0, penaltyAvoided - interventionCost);
 
@@ -739,7 +796,7 @@ function renderAssistant() {
     <div class="asst-hero">
       <div class="asst-hero-left">
         <div class="asst-hero-title">Position Analysis for <span class="mono">${p.borrower.slice(0, 8)}...${p.borrower.slice(-6)}</span></div>
-        <div class="asst-hero-desc">Risk Status: <strong style="color:${risk.color};">${risk.label}</strong> (Backend State: <code class="mono">${p.state}</code>) | Volatility Band: <span class="mono">Realized σ Active</span></div>
+        <div class="asst-hero-desc">Risk Status: <strong class="badge ${risk.cls}">${risk.label}</strong> (Backend State: <code class="mono">${p.state}</code>)</div>
       </div>
       <div class="asst-hero-right">
         <span class="badge ${currentHf && currentHf <= 1.15 ? 'badge-danger' : 'badge-safe'}">

@@ -9,11 +9,12 @@ publicly. After the receipt resolves, HF is re-read to label the outcome RESTORE
 from __future__ import annotations
 
 import logging
-from typing import Any, cast
+from typing import Any, Final, cast
 
 from eth_account import Account
 from eth_utils.address import to_checksum_address
 from web3 import AsyncWeb3
+from web3.exceptions import ContractLogicError, Web3RPCError
 
 from app.chain.aave import AaveClient
 from app.chain.client import ChainClient
@@ -22,6 +23,14 @@ from app.core.models import RescuePlan, RiskParams, SubmissionResult
 from app.core.state import PositionState
 
 logger = logging.getLogger(__name__)
+
+# Exceptions that indicate the vault call could not execute *on this node* — an
+# opcode-level halt rather than a decision by the contract. Aave V3.3's flash-loan
+# reentrancy guard uses the Cancun TSTORE opcode, and anvil cannot fork Arbitrum
+# under Cancun ("Excess blob gas not set"), so it runs Shanghai where TSTORE halts
+# and web3 reports a bare revert with empty data. Only these get the direct-repay
+# fallback; a nonce error, RPC timeout, or genuine contract revert must surface.
+_FALLBACK_TRIGGERS: Final = (ContractLogicError, Web3RPCError)
 
 
 class SubmitterError(RuntimeError):
@@ -61,7 +70,7 @@ class Submitter:
     ) -> SubmissionResult:
         sig = bytes.fromhex(signature.removeprefix("0x"))
 
-        async def _send(w3: AsyncWeb3[Any]) -> tuple[str, int, int]:
+        async def _send(w3: AsyncWeb3[Any]) -> tuple[str, int, int, bool]:
             vault = w3.eth.contract(address=self._vault, abi=vault_abi())
             fn = vault.functions.executeProtection(
                 params.to_solidity_tuple(), sig,
@@ -78,8 +87,17 @@ class Submitter:
                 signed = self._account.sign_transaction(tx)
                 tx_hash = await w3.eth.send_raw_transaction(signed.raw_transaction)
                 receipt = await w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
-                return tx_hash.hex(), int(receipt["status"]), int(receipt["gasUsed"])
-            except Exception:
+                return tx_hash.hex(), int(receipt["status"]), int(receipt["gasUsed"]), False
+            except _FALLBACK_TRIGGERS as exc:
+                # Only the local-fork opcode halt gets the fallback. This used to be a
+                # bare `except Exception`, so nonce errors, RPC timeouts and genuine
+                # reverts were all silently converted into a direct repay reported as
+                # success - indistinguishable from a real rescue. Everything else now
+                # propagates to the caller, which records it as a failure.
+                logger.warning(
+                    "executeProtection could not execute (%s); falling back to a direct "
+                    "Aave repay - no flash loan, swap, or HealthGuard will run", exc,
+                )
                 # If running on local anvil Shanghai fork where Aave V3.3 TSTORE halts,
                 # execute the on-chain debt repayment directly on Aave Pool so HF is restored.
                 pool_abi = [
@@ -104,9 +122,10 @@ class Submitter:
                     to_checksum_address(plan.debt_asset), repay_amount, 2, borrower_addr
                 ).transact({"from": borrower_addr})
                 receipt = await w3.eth.wait_for_transaction_receipt(tx2)
-                return tx2.hex(), int(receipt.get("status", 1)), int(receipt.get("gasUsed", 185000))
+                return (tx2.hex(), int(receipt.get("status", 1)),
+                        int(receipt.get("gasUsed", 185000)), True)
 
-        tx_hash, status, gas_used = await self._c.call(_send)
+        tx_hash, status, gas_used, via_fallback = await self._c.call(_send)
         tx_hex = tx_hash if tx_hash.startswith("0x") else f"0x{tx_hash}"
 
         hf_after: float | None = None
@@ -118,9 +137,10 @@ class Submitter:
             state = PositionState.REVERTED
 
         logger.info(
-            "submission borrower=%s tx=%s status=%d state=%s hf_after=%s",
-            plan.borrower, tx_hex, status, state.value, hf_after,
+            "submission borrower=%s tx=%s status=%d state=%s hf_after=%s via_fallback=%s",
+            plan.borrower, tx_hex, status, state.value, hf_after, via_fallback,
         )
         return SubmissionResult(
-            tx_hash=tx_hex, status=status, state=state, hf_after=hf_after, gas_used=gas_used
+            tx_hash=tx_hex, status=status, state=state, hf_after=hf_after,
+            gas_used=gas_used, via_fallback=via_fallback,
         )

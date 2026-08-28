@@ -28,6 +28,18 @@ target-version = "py311"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# One event loop for the whole run. web3 caches its aiohttp session per (loop, endpoint) and
+# never closes it, so a loop per test leaks an "Unclosed client session" for every chain call.
+asyncio_default_test_loop_scope = "session"
+asyncio_default_fixture_loop_scope = "session"
+filterwarnings = [
+    "error",
+    # Starlette's TestClient still imports httpx 0.x; nothing to fix on our side until it moves.
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated",
+    # uvicorn[standard] pulls in websockets.legacy at import time.
+    "ignore:websockets.legacy is deprecated:DeprecationWarning",
+    "ignore:websockets.server.WebSocketServerProtocol is deprecated:DeprecationWarning",
+]
 
 [tool.mypy]
 python_version = "3.11"

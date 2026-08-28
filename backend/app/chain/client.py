@@ -110,6 +110,21 @@ class ChainClient:
         except Exception:  # noqa: BLE001 - health probe, never raises
             return False
 
+    async def close(self) -> None:
+        """Release the aiohttp sessions web3 caches behind each provider.
+
+        web3 keys its session cache by ``(event_loop_id, endpoint)`` and never closes an
+        entry itself, so a process that builds providers and exits — the API on shutdown, a
+        test run between event loops — leaks "Unclosed client session" warnings unless we
+        disconnect explicitly.
+        """
+        for provider in self._providers:
+            try:
+                await provider.provider.disconnect()
+            except Exception:  # teardown is best-effort, never raises
+                logger.debug("Provider disconnect failed", exc_info=True)
+        self._contracts.clear()
+
 
 # Lazily-constructed process-wide client (built on first use so importing this module
 # never requires RPC config — matters for unit tests and `--help`).
@@ -121,3 +136,11 @@ def get_client() -> ChainClient:
     if _client is None:
         _client = ChainClient()
     return _client
+
+
+async def close_client() -> None:
+    """Close and drop the process-wide client (app shutdown / test teardown)."""
+    global _client
+    if _client is not None:
+        await _client.close()
+        _client = None

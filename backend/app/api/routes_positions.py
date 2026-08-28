@@ -44,12 +44,28 @@ async def get_position(borrower: str, service: Service) -> dict[str, object]:
 
 
 
+def _chain_error(exc: Exception) -> HTTPException:
+    """Map a pipeline/chain failure onto a meaningful status code.
+
+    Only ``get_position`` used to carry a handler, so an RPC fault on any of the
+    routes below returned a raw 500 with a traceback. A bad address is the
+    caller's fault (400); anything else is the chain or provider being
+    unavailable (503).
+    """
+    if isinstance(exc, ValueError):
+        return HTTPException(status_code=400, detail=f"Invalid request: {exc}")
+    return HTTPException(status_code=503, detail=f"Chain RPC error: {exc}")
+
+
 @router.get("/{borrower}/assessment", response_model=AssessmentResponse)
 async def get_assessment(borrower: str, service: Service) -> AssessmentResponse:
     registered = service.params_of(borrower)
     if registered is None:
         raise HTTPException(status_code=404, detail="borrower not registered; POST params first")
-    return await service.assess(registered[0])
+    try:
+        return await service.assess(registered[0])
+    except Exception as exc:
+        raise _chain_error(exc) from exc
 
 
 @router.post("/{borrower}/assessment", response_model=AssessmentResponse)
@@ -57,11 +73,17 @@ async def post_assessment(borrower: str, body: ProtectRequest, service: Service)
     """Register the signed params and return a dry-run assessment (no submission)."""
     _require_match(borrower, body)
     service.register(body.params, body.signature)
-    return await service.assess(body.params)
+    try:
+        return await service.assess(body.params)
+    except Exception as exc:
+        raise _chain_error(exc) from exc
 
 
 @router.post("/{borrower}/protect", response_model=ProtectResponse)
 async def protect(borrower: str, body: ProtectRequest, service: Service) -> ProtectResponse:
     """Manual trigger — assess → simulate → submit, bounded by the signed params (FR-13)."""
     _require_match(borrower, body)
-    return await service.protect(body.params, body.signature)
+    try:
+        return await service.protect(body.params, body.signature)
+    except Exception as exc:
+        raise _chain_error(exc) from exc

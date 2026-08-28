@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 
 from app import observability as obs
+from app.config.settings import settings
 from app.core.breaker import CircuitBreaker
 from app.core.inflight import InFlightRegistry
 from app.core.models import (
@@ -30,6 +31,13 @@ from app.core.state import PositionState
 from app.core.submitter import Submitter
 
 logger = logging.getLogger(__name__)
+
+# Shown when a rescue restored HF via the submitter's direct-repay fallback rather
+# than the vault's atomic flash-loan path, so the UI never implies the vault ran.
+_FALLBACK_REASON = (
+    "HF restored via direct Aave repay - the atomic vault path was unavailable "
+    "on this fork (executeProtection did not execute)"
+)
 
 
 class ProtectionService:
@@ -130,9 +138,15 @@ class ProtectionService:
                 assessment=response, reason="assessment-only (no simulator configured)",
             )
             
-        clean_sig = signature.removeprefix("0x")
-        if not clean_sig or clean_sig == "00" * (len(clean_sig) // 2):
-            signature = await self._resolve_demo_signature(borrower, params, signature)
+        # Demo convenience: on a local fork, stand in for the borrower's wallet and
+        # sign the EIP-712 digest server-side when the request carries no signature.
+        # Gated behind DEMO_MODE so it can never run in a real deployment - without
+        # the gate the UI's "the vault refused it, key never touches the backend"
+        # claim is false for exactly the accounts a demo uses.
+        if settings.demo_mode:
+            clean_sig = signature.removeprefix("0x")
+            if not clean_sig or clean_sig == "00" * (len(clean_sig) // 2):
+                signature = await self._resolve_demo_signature(borrower, params, signature)
 
         sim = await self._simulator.simulate(plan, params, signature)
         if not sim.success:
@@ -175,13 +189,34 @@ class ProtectionService:
                 self._states[borrower] = PositionState.REVERTED
                 if self._breaker.paused:
                     self._counters.inc(obs.BREAKER_TRIPPED)
+        except Exception as exc:
+            # Previously an exception here escaped the try/finally, so the breaker
+            # streak stayed at 0 and the borrower was left pinned in SUBMITTED: a
+            # permanently broken submitter would retry forever and FR-17 would
+            # never engage. Record it exactly as a reverted receipt is recorded.
+            self._counters.inc(obs.REVERTED)
+            self._counters.inc(obs.ERRORS)
+            self._breaker.record_failure()
+            self._states[borrower] = PositionState.REVERTED
+            if self._breaker.paused:
+                self._counters.inc(obs.BREAKER_TRIPPED)
+            logger.exception("submitter raised for borrower=%s", borrower)
+            return ProtectResponse(
+                borrower=borrower, state=PositionState.REVERTED, submitted=False,
+                assessment=response, reason=f"submission failed: {exc}",
+            )
         finally:
             self._inflight.release(borrower)
 
         return ProtectResponse(
             borrower=borrower, state=self._states[borrower],
             submitted=sub.status == 1, tx_hash=sub.tx_hash, assessment=response,
-            reason=None if sub.status == 1 else "transaction reverted (position unchanged)",
+            via_fallback=sub.via_fallback,
+            reason=(
+                _FALLBACK_REASON if sub.status == 1 and sub.via_fallback
+                else None if sub.status == 1
+                else "transaction reverted (position unchanged)"
+            ),
         )
 
     # --- Autonomous worker tick ------------------------------------------------------------
@@ -240,6 +275,7 @@ class ProtectionService:
             from eth_account import Account
             from eth_utils.address import to_checksum_address
             from web3 import AsyncWeb3
+
             from app.config.arbitrum import vault_abi
             from app.config.settings import settings
             

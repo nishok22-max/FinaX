@@ -86,6 +86,18 @@ class Simulator:
                 )
                 amount_in = quote.amount_in
                 bumps += 1
+            except Exception as exc:  # noqa: BLE001 - a dry-run must never 500 the caller
+                # Only ContractLogicError was caught before, so any other web3 fault
+                # (RPC error, timeout, decode failure) escaped simulate() and became
+                # an uncaught 500 with no breaker record. A failed pre-flight is a
+                # declined rescue, not a server error.
+                logger.warning(
+                    "simulation error borrower=%s error=%s", plan.borrower, exc,
+                )
+                return SimulationResult(
+                    success=False, repay_amount=repay, amount_in_maximum=amount_in_max,
+                    bumps=bumps, revert_reason=f"simulation error: {exc}",
+                )
 
         return SimulationResult(
             success=False, repay_amount=repay, amount_in_maximum=_amount_in_maximum(

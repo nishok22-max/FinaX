@@ -32,9 +32,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         if worker is not None:
             await worker.stop()
+        # Release the RPC transports so the process exits without leaking aiohttp sessions.
+        from app.chain.client import close_client
+        from app.deps import close_container
+
+        await close_container()
+        await close_client()
 
 
 from pathlib import Path
+
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
