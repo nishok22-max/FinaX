@@ -1,0 +1,27 @@
+{
+  "_comment": "Arbitrum One (chainId 42161) addresses. VERIFY each against the official registry before mainnet use — Aave: https://aave.com/docs/resources/addresses ; Uniswap: https://docs.uniswap.org/contracts/v3/reference/deployments/arbitrum-deployments",
+  "chainId": 42161,
+  "aaveV3": {
+    "poolAddressesProvider": "0xa97684ead0e402dC232d5A977953DF7ECBaB3CDb",
+    "pool": "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
+    "aaveOracle": "0xb56c2F0B653B2e0b10C9b928C8580Ac5Df02C7C7"
+  },
+  "uniswapV3": {
+    "swapRouter02": "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+    "quoterV2": "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
+    "factory": "0x1F98431c8aD98523631AE4a59f267346ea31F984"
+  },
+  "tokens": {
+    "WETH": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+    "USDC": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+    "USDC_e": "0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8",
+    "wstETH": "0x5979D7b546E38E414F7E9822514be443A4800529"
+  },
+  "chainlink": {
+    "ethUsd": "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612",
+    "usdcUsd": "0x50834F3163758fcC1Df9973b6e91f0F0F0434aD3"
+  },
+  "uniswapFeeTiers": {
+    "WETH_USDC": 500
+  }
+}

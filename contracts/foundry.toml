@@ -1,0 +1,20 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.24"
+optimizer = true
+optimizer_runs = 200
+evm_version = "cancun"
+fs_permissions = [{ access = "read", path = "./addresses.json" }]
+
+# Fork configuration — supply ARBITRUM_RPC_URL (and optional FORK_BLOCK) via env / .env.
+# Tests call vm.createSelectFork(ARBITRUM_RPC_URL[, FORK_BLOCK]).
+[rpc_endpoints]
+arbitrum = "${ARBITRUM_RPC_URL}"
+
+[fmt]
+line_length = 120
+tab_width = 4
+bracket_spacing = false
+int_types = "long"
