@@ -340,7 +340,149 @@ a { color: inherit; }
 
 /* ── Assistant ───────────────────────────────────────────────────────── */
 
-.assistant-text { font-size: 14px; line-height: 1.8; color: var(--text-secondary); white-space: pre-line; }
+.assistant-text { font-size: 14px; line-height: 1.8; color: var(--text-secondary); }
+
+.asst-hero {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.asst-hero-left { display: flex; flex-direction: column; gap: 4px; }
+.asst-hero-title { font-size: 16px; font-weight: 700; color: var(--text-primary); }
+.asst-hero-desc { font-size: 13px; color: var(--text-secondary); }
+
+.asst-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-bottom: 20px;
+}
+@media (max-width: 768px) { .asst-grid-3 { grid-template-columns: 1fr; } }
+
+.asst-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+.asst-card-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.asst-card-val {
+  font-size: 20px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}
+.asst-card-sub {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+.asst-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 24px 0 12px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Comparison Table */
+.asst-table-wrap {
+  overflow-x: auto;
+  margin-bottom: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.asst-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  text-align: left;
+}
+.asst-table th, .asst-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.asst-table th {
+  background: var(--surface-elevated);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.asst-table tr:last-child td { border-bottom: none; }
+.asst-table tr:hover td { background: rgba(255, 255, 255, 0.02); }
+
+/* Plan Timeline */
+.asst-plan-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.asst-plan-step {
+  display: flex;
+  gap: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  align-items: center;
+}
+.asst-plan-num {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--surface-elevated);
+  padding: 4px 8px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+.asst-plan-content { flex: 1; font-size: 13px; }
+.asst-plan-main { color: var(--text-primary); font-weight: 600; }
+.asst-plan-sub { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
+
+/* Callout */
+.asst-callout {
+  background: var(--success-bg);
+  border: 1px solid var(--success);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+  font-size: 13px;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.asst-callout-val {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--success);
+}
+
 
 /* ── Toasts ──────────────────────────────────────────────────────────── */
 
@@ -359,9 +501,11 @@ a { color: inherit; }
 
 /* ── Responsive nav ──────────────────────────────────────────────────── */
 
-@media (max-width: 980px) {
+/* The nav row needs ~1370px to sit comfortably (brand 194 + links 686 +
+   right cluster 425 + padding). Collapse to the menu button before it
+   starts squeezing, not at a phone-sized breakpoint. */
+@media (max-width: 1200px) {
   .navlinks { display: none; }
   .btn-icon { display: flex; }
-  .navbar-right .btn-primary span { display: none; }
   .navlinks-mobile.open { display: flex; }
 }

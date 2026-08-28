@@ -27,7 +27,7 @@ def _require_match(borrower: str, body: ProtectRequest) -> None:
 @router.get("/{borrower}")
 async def get_position(borrower: str, service: Service) -> dict[str, object]:
     registered = service.params_of(borrower)
-    trigger = registered[0].hf_trigger_bps if registered else 0
+    trigger = registered[0].hf_trigger_bps if registered else 11500
     try:
         snap = await service.snapshot(borrower, trigger)
         return {

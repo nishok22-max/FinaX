@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Liquidation Shield — Protection Check</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="protection-check.css" />
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">▲</div>
+      <div class="brand-text">
+        <div class="brand-name">Liquidation Shield</div>
+        <div class="brand-sub">Automated Flash-Repayment Vault</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span class="chip status-warn" id="chip-rpc"><span class="dot"></span> connecting…</span>
+      <a class="btn-link" href="/docs" target="_blank" rel="noopener">Technical API ↗</a>
+    </div>
+  </header>
+
+  <div class="page">
+
+    <!-- Input card -->
+    <section class="card entry-card">
+      <div class="entry-head">
+        <h1>Check &amp; Protect a Position</h1>
+        <p>Enter a borrower's wallet address. This runs the full pipeline against live Aave V3 data — nothing here is scripted.</p>
+      </div>
+      <div class="entry-form">
+        <input type="text" id="borrower-input" class="input input-lg" spellcheck="false"
+               value="0x70997970C51812dc3A010C7d01b50e0d17dc79C8" placeholder="0x… wallet address" />
+        <button class="btn btn-primary btn-lg" id="btn-run" onclick="runFullCheck()">Run Protection Check</button>
+      </div>
+    </section>
+
+    <!-- Progress stepper -->
+    <section class="card stepper-card" id="stepper-card" style="display:none;">
+      <div class="progress-track">
+        <div class="progress-fill" id="progress-fill"></div>
+      </div>
+      <div class="stepper" id="stepper">
+        <div class="step" data-step="1">
+          <div class="step-dot"><span class="step-icon">1</span></div>
+          <div class="step-label">Connect to Arbitrum</div>
+        </div>
+        <div class="step" data-step="2">
+          <div class="step-dot"><span class="step-icon">2</span></div>
+          <div class="step-label">Read Wallet Position</div>
+        </div>
+        <div class="step" data-step="3">
+          <div class="step-dot"><span class="step-icon">3</span></div>
+          <div class="step-label">Run Risk &amp; Sizing Pipeline</div>
+        </div>
+        <div class="step" data-step="4">
+          <div class="step-dot"><span class="step-icon">4</span></div>
+          <div class="step-label">Check Economic Viability</div>
+        </div>
+        <div class="step" data-step="5">
+          <div class="step-dot"><span class="step-icon">5</span></div>
+          <div class="step-label">Execute Protection</div>
+        </div>
+      </div>
+      <div class="stepper-status" id="stepper-status">Waiting to start…</div>
+    </section>
+
+    <!-- Result -->
+    <section class="card result-card" id="result-card" style="display:none;">
+      <div class="result-headline" id="result-headline">—</div>
+      <div class="result-sub" id="result-sub"></div>
+
+      <div class="hf-block">
+        <div class="hf-side">
+          <div class="hf-label">Health Factor (before)</div>
+          <div class="hf-value" id="hf-before">—</div>
+        </div>
+        <div class="hf-arrow">→</div>
+        <div class="hf-side">
+          <div class="hf-label">Health Factor (target)</div>
+          <div class="hf-value safe" id="hf-target">—</div>
+        </div>
+      </div>
+
+      <div class="gauge-wrap">
+        <div class="gauge-labels">
+          <span>Liquidation (1.00)</span>
+          <span>Trigger zone</span>
+          <span>Safe (&gt;1.50)</span>
+        </div>
+        <div class="gauge-track">
+          <div class="gauge-seg seg-danger" style="width:25%"></div>
+          <div class="gauge-seg seg-warning" style="width:20%"></div>
+          <div class="gauge-seg seg-safe" style="width:55%"></div>
+          <div class="gauge-marker" id="hf-marker" style="left:15%">
+            <div class="pin"></div>
+            <div class="tag" id="hf-marker-tag">—</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="result-grid">
+        <div class="result-tile">
+          <div class="rt-label">Collateral</div>
+          <div class="rt-val" id="rt-collateral">—</div>
+        </div>
+        <div class="result-tile">
+          <div class="rt-label">Debt</div>
+          <div class="rt-val" id="rt-debt">—</div>
+        </div>
+        <div class="result-tile">
+          <div class="rt-label">Rescue Amount</div>
+          <div class="rt-val" id="rt-repay">—</div>
+        </div>
+        <div class="result-tile">
+          <div class="rt-label">Rescue Cost</div>
+          <div class="rt-val" id="rt-cost">—</div>
+        </div>
+      </div>
+
+      <button class="btn btn-secondary btn-block" onclick="toggleDetails()" id="btn-details">Show technical details</button>
+      <div class="details-box" id="details-box" style="display:none;"></div>
+    </section>
+
+    <div class="footer-note">
+      Unaudited hackathon PoC — Arbitrum One mainnet-fork tested (13/13 Foundry tests). Non-custodial: the borrower's key never touches the backend.
+    </div>
+  </div>
+
+  <script src="protection-check.js"></script>
+</body>
+</html>

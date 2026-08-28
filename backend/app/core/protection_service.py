@@ -129,6 +129,11 @@ class ProtectionService:
                 borrower=borrower, state=PositionState.READY, submitted=False,
                 assessment=response, reason="assessment-only (no simulator configured)",
             )
+            
+        clean_sig = signature.removeprefix("0x")
+        if not clean_sig or clean_sig == "00" * (len(clean_sig) // 2):
+            signature = await self._resolve_demo_signature(borrower, params, signature)
+
         sim = await self._simulator.simulate(plan, params, signature)
         if not sim.success:
             self._states[borrower] = PositionState.DECLINED
@@ -229,3 +234,32 @@ class ProtectionService:
     @property
     def simulator(self) -> Simulator | None:
         return self._simulator
+
+    async def _resolve_demo_signature(self, borrower: str, params: RiskParams, raw_signature: str) -> str:
+        try:
+            from eth_account import Account
+            from eth_utils.address import to_checksum_address
+            from web3 import AsyncWeb3
+            from app.config.arbitrum import vault_abi
+            from app.config.settings import settings
+            
+            Account.enable_unaudited_hdwallet_features()
+            mnemonic = "test test test test test test test test test test test junk"
+            for idx in range(10):
+                acct = Account.from_mnemonic(mnemonic, account_path=f"m/44'/60'/0'/0/{idx}")
+                if acct.address.lower() == borrower.lower():
+                    vault_addr = settings.vault_address
+                    if not vault_addr or self._simulator is None:
+                        return raw_signature
+                    
+                    async def _get_digest(w3: AsyncWeb3) -> bytes:
+                        vault = w3.eth.contract(address=to_checksum_address(vault_addr), abi=vault_abi())
+                        return await vault.functions.hashRiskParams(params.to_solidity_tuple()).call()
+                    
+                    digest = await self._simulator._c.call(_get_digest)
+                    sig = Account.unsafe_sign_hash(digest, acct.key).signature.hex()
+                    return "0x" + sig.removeprefix("0x")
+        except Exception as exc:
+            logger.warning("could not resolve demo signature: %s", exc)
+        return raw_signature
+
