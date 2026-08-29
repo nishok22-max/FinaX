@@ -3,7 +3,7 @@
 Phase 0 booted the service with the minimal set. Phase 3 adds the fields the typed
 chain clients need: fork pinning, RPC timeouts, oracle staleness, and the token /
 Chainlink address book (defaulted to Arbitrum One, overridable for a fork/testnet).
-Risk-threshold / gas-policy fields for the decision pipeline arrive in Phase 4+.
+# Risk-threshold / gas-policy fields for the decision pipeline arrive in Phase 4+.
 """
 from __future__ import annotations
 

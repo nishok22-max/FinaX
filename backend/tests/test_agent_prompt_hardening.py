@@ -106,7 +106,7 @@ def test_the_boundary_names_each_refusal(clause: str) -> None:
     [
         "SCOPE",
         "Out of scope",
-        "financial, investment or trading advice",
+        "Financial, investment or trading advice is out of scope",
         "roleplay or fiction",
         "outside what I can help with",       # the fixed refusal shape
     ],
@@ -117,9 +117,34 @@ def test_chat_declares_and_bounds_its_scope(clause: str) -> None:
 
 def test_advice_refusal_is_not_merely_implied() -> None:
     """The one out-of-scope class with real-world consequence gets an explicit carve-out."""
-    assert "cannot advise" in prompts.CHAT_SYSTEM or "do not tell anyone whether" in (
-        prompts.CHAT_SYSTEM.lower()
-    )
+    assert "Never advise." in prompts.CHAT_SYSTEM
+
+
+@pytest.mark.parametrize(
+    "clause",
+    [
+        "EXPLAINING THE MECHANICS IS NOT",
+        "Refusing a mechanical question is",
+        "HF = (collateral x liquidation threshold)",
+        "how much would I have to repay?",
+        "Report freely.",
+    ],
+)
+def test_mechanics_are_carved_out_of_the_advice_refusal(clause: str) -> None:
+    """Regression: "how can I increase my HF above 2?" was refused as financial advice.
+
+    It is not advice — it is arithmetic over figures the tools already return, and refusing it
+    made the assistant useless for the question operators most often ask. Over-refusal is a real
+    failure mode of scope hardening, not a safe default: an assistant that stonewalls legitimate
+    questions trains people to stop asking, and the refusal is indistinguishable from a bug.
+    """
+    assert clause in prompts.CHAT_SYSTEM
+
+
+def test_the_reporting_versus_advising_line_is_stated_explicitly() -> None:
+    """A rule the model has to infer is a rule it will apply inconsistently."""
+    lowered = prompts.CHAT_SYSTEM.lower()
+    assert "is reporting" in lowered and "is advising" in lowered
 
 
 def test_crew_prompts_do_not_carry_the_chat_scope_block() -> None:

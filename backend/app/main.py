@@ -51,8 +51,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 from pathlib import Path
+from typing import Any
 
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 app = FastAPI(title="Liquidation Shield Keeper", version="0.5.0", lifespan=lifespan)
@@ -64,9 +65,30 @@ app.include_router(routes_metrics.router)
 # API surface is stable whether or not the optional agent extra is installed.
 app.include_router(routes_agent.router)
 
+class _RevalidatingStatics(StaticFiles):
+    """Serve the console with ``Cache-Control: no-cache``.
+
+    ``StaticFiles`` sends an ``ETag`` and ``Last-Modified`` but no ``Cache-Control``, so browsers
+    fall back to heuristic caching and will serve ``finax.js`` from cache **without revalidating**.
+    The failure mode is nasty precisely because it looks like a code bug: an edit lands on disk,
+    the server returns the new file to ``curl``, and the page keeps running the old one. That cost
+    a real debugging cycle here - a fixed status comparison appeared not to take effect.
+
+    ``no-cache`` does not mean "do not store"; it means "revalidate before use", so the ETag still
+    does its job and unchanged files still come back as a cheap 304.
+    """
+
+    def file_response(self, *args: Any, **kwargs: Any) -> Response:
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 frontend_dir = Path(__file__).resolve().parent.parent.parent / "frontend"
 if frontend_dir.exists():
-    app.mount("/console", StaticFiles(directory=str(frontend_dir), html=True), name="console")
+    app.mount(
+        "/console", _RevalidatingStatics(directory=str(frontend_dir), html=True), name="console"
+    )
 
     @app.get("/", include_in_schema=False)
     async def root_redirect() -> RedirectResponse:

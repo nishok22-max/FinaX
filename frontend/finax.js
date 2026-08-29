@@ -250,6 +250,17 @@ async function loadPosition() {
     state.position = data;
     state.assessment = null;
     state.protectResult = null;
+
+    // Auto-register pre-signed mandate with backend if on file
+    if (hasSignature(addr)) {
+      const payload = buildParamsPayload(addr);
+      fetch(`${API_BASE}/positions/${addr}/assessment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }).catch(() => {});
+    }
+
     renderPosition();
     renderCommandCenter();
     renderRisk();
@@ -485,6 +496,55 @@ const DEMO_SIGNATURES = {
     { nonce: 4, sig: "0x59a2e0556202c5010d57a896e3099c3804f6d85751ba517978b116649c2a8ec15e0d6396f76b55615b2d2fb9fd580024bfc58d1d8647daa121a76a4ed5cc62291c" },
     { nonce: 5, sig: "0x054f7ef1a9b1553dedaa263ea8c5fabb2fada25ea1ce36c4cb28b16e4c8a50c03ccd54e28d16386b44926359ade442e724be0ec180477c40d0e9c56c21de2c921c" },
   ],
+  "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc": [
+    { nonce: 1, sig: "0x8142066a05cc721b608f3244bab9e1f8ff3a0d19575a8ed2cfdef670024b3d38380f81933da40e74bbb3e4eac9d8ed284dfe6d5ac59393219b26097817ce83a91c" },
+    { nonce: 2, sig: "0xc2a4df6cd329941e4fc954eef6bbb32a44b63e6df2231ef0e0f655b433215da417982d1e99acab75e39d41c3edf2b4ab28e71dff336cabc18c57e8ed4303e87f1b" },
+    { nonce: 3, sig: "0x14b7199f77df331448cc2db9c8a88817258010a5713a87ee75a6edeb51d270a60e10bef5e48344edf2e2b06b800ad7abaeaa976548d7a5f9f5a0c56d642992471b" },
+    { nonce: 4, sig: "0xd55ccb53ca5fc2ce8db9806b1d09fd07e00ef2af8c3c4382fb93e3496958bc66005b7bb4d38d87eacfecbda5ee9478bce825329b413446b304a63769bc5896e11c" },
+    { nonce: 5, sig: "0x7f499dc03568365642aa17634fa0acf20c2d289c79729748a4af26eec89e39d337eed2c5808f726997f981f3e2dbf953ec266fdf9f4646a48751e8d865c34f6e1b" },
+  ],
+  "0x90f79bf6eb2c4f870365e785982e1f101e93b906": [
+    { nonce: 1, sig: "0xdd905adbe0ab8e8d7ef13015759a1850960ece625339b7e010984bde4474258a62e461895cd6e87c7567ccc4168db0162109519275369793a86dc2c6bd6d38b21b" },
+    { nonce: 2, sig: "0xaa3c52d2013d32dc5945e88920ef08ef5f0b85b2bbdd26e4abf1b6c305da9c3e2fe57ef02d4479a89c79648fc60f3d495eb0f336572e96e710186bfb82eb636a1c" },
+    { nonce: 3, sig: "0xec45b8b11728aecea4887808a2e347417c320e927a1c33467b05e4be7678472e213e1461be332618dfc85e4b282273348ef871a394f64f44af1c912ab61c271e1b" },
+    { nonce: 4, sig: "0x10117166d951078554559c0466bd1414a812023d2a5f8a83a581c068042410dd4e307cd4854ac546f3769886313a2f1122729cecb09dc3978c06bde44b86ae741c" },
+    { nonce: 5, sig: "0xfda678b532e7a33e56daa4acd5da2f2871c54c0fd9de8a9b1e713987a830c1594dbb4547f4c1852782253aee3ab02a38c830338ce0052fe8e473df41361bd4351c" },
+  ],
+  "0x15d34aaf54267db7d7c367839aaf71a00a2c6a65": [
+    { nonce: 1, sig: "0x2cdff70aba651ee6ffa237c98bfd7126835e087729781ef49c8699f40e98e792573e543bffb36f40fa760b3b90b0e0ac6f1ad45dc0468a0432276cb33bd3cdbf1c" },
+    { nonce: 2, sig: "0xd9e76cb6327cbe24bf5f2f8d6fee164af3c34b5dbcd1977bfee624722d0ad3920799717b83554470bea48cf425d37c0891b724ce4257515a68a610c662143d921c" },
+    { nonce: 3, sig: "0xf8ef4a524542533807facea4af1e725aded5463cd3a7882e4b044514c21346c512451340f427e3137bff9a8e2ea440a62f4dd91313c08b2b80579b86a85b362a1b" },
+    { nonce: 4, sig: "0x5888474ddc1ca45b6e90b9ed94b166b57388ca361a6c9c9a49076d94394fc9d3024ccab70266111a24a52638784c960a07fa8569eef5fdb6e422f96fc505bc4a1b" },
+    { nonce: 5, sig: "0x0c5a1f445dbf16943da9f3bfcbb003ba5e830cc1836a1555a514d783417864ff44de0c548f8577f00d6f7d287ff3172d0aefc88502a819c5a643fd9f7ab723f01b" },
+  ],
+  "0x9965507d1a55bcc2695c58ba16fb37d819b0a4dc": [
+    { nonce: 1, sig: "0xad14a55cfb7852447ee108ce1fbbc0acb66d2a21078ca9a308544e3440b229357177779a6926de9a357e2c38ed7dfcef8caca5b203257c0cef96aaf93ec63a8b1c" },
+    { nonce: 2, sig: "0x383d4eb192b965dd05a99ca8c5852d3e015395d834cbf122bd3da616286cd472173b46b1eb6e283d4f4317a1802956c89b43eb92864acc1066c71476df9e872c1b" },
+    { nonce: 3, sig: "0xa4e98d2bd1b4996bb7feea1d59fe8fa465303ad84f321fc51095ca8cb8e0bff2677dbbc32ba7ae811387de0ba91930c10d044f753b580e2e8a97939cd759f83c1b" },
+    { nonce: 4, sig: "0x2892265fd8a9154d63ea4a768af5f6170eacb4a38dc12612250dd7e1963f6d7629712fe78b0034c05bbf634262d52ae54d2644fb3e9c6e99b1479a7bf23dbea01c" },
+    { nonce: 5, sig: "0x71fca6686e41a43e2b39e84250b7ed4a2e4f9ab62160591e705c3f3c736b646a6501078a5e4e3356df3b7344e335696f0079f6d998df7d2350d4f3abd4e64d561c" },
+  ],
+  "0x976ea74026e726554db657fa54763abd0c3a0aa9": [
+    { nonce: 1, sig: "0xfebc368a093de6ddb3c7f6410669eb5f79cd8ed3fa40fe54fa0d718753f489bb195c17e7f251f39308defe1a0eee554f23d53d4768e5ee85cc4bf0d372fa1f221b" },
+    { nonce: 2, sig: "0x40faed210f2cf734567e51d861c82ba2151ab17732dec36034b4ec2d0afe48eb4c4bde94a168ff7f8d99d5ef0888eddfb37169d495edbfbe664227dbcb7d804b1c" },
+    { nonce: 3, sig: "0xd38ec0d287172104c18578f4b1bc7de0504941da0c7abeb576044aabc4ad607118ac611908dc778a3372607d480d7404c53651dfaa9c90023202559ac1a4efc21c" },
+    { nonce: 4, sig: "0xceff172729accd1948085ba5f5be79097fbc0d169fcde3ad1f5507de21a63da230de72d5431addd73b97dd8ebaa3893da33c5072af378414f0443d46ae052b151b" },
+    { nonce: 5, sig: "0x7039490a168f209cd39fd65c149a659f4680a29519fa313111fa7e18b1795ca64efbcc6a8dc82de70cd0d508bfdb5d1c8ea556c72b693310b7dcc12189977d8a1c" },
+  ],
+  "0x14dc79964da2c08b23698b3d3cc7ca32193d9955": [
+    { nonce: 1, sig: "0xe0c911d81343d79ee2b15c1c14701454154cb6584895a49d700c7cd0ebcc1f8b28cb208dfa6049a4501522186d5d3d00feecf603bde7de841e5f5e82b7dde4971b" },
+    { nonce: 2, sig: "0x7cc713d8736cacc576174c845a7c21f4859171ec518d68807cdd791637e026260f1db1cc861efa5f1ac92c7f653f6b74cffccd8975130b124d653a558a56f7f41c" },
+    { nonce: 3, sig: "0x12179f1ff73e152cb079a08a18d628a47fdbd526a10075649fbe843a752319ed431d5afe082a45897984118c25747c403ce1074ffc4140fb10999e49ec1c5b921c" },
+    { nonce: 4, sig: "0x57cee64258d4329c98e3682505ac50b75fbac6212d5a872fb94207161145582832610c1ebc9ee846cd23c577084176b5d5ec7e7d6fdeee64923968f143304c861c" },
+    { nonce: 5, sig: "0x63c510967d2f8a58e7e2a5ebad061d487f5284e4b034f237dbcc1dda9dd7d0ae157431d4c9a34552ba56f16f16857a15f887b413ed8262b787ec7c5b15f648001c" },
+  ],
+  "0x23618e81e3f5cdf7f54c3d65f7fbc0abf5b21e8f": [
+    { nonce: 1, sig: "0xa9a3c526f6d68e6f64e8c85f57190406e71b343e007f1449a168fd87f1b2d60d3341b31024f1532066dcb0fc438af094f1dd120bd1247560f7d076d9efcb29731b" },
+    { nonce: 2, sig: "0xca16a2406bf30be7da472483f7311d017d6bee7c599675cc661107ecd4c498485fccb4a432e06d5393c2395aa2464590ce1babf038812d30981cf4bc624c59521b" },
+    { nonce: 3, sig: "0xe77766422478996d885f01982bbb7fcb2f148dd1cb761f35ed814029ea9da34c5932ce0ed66ef1c42cd03df3bfe74bec89a76ffc301761dc447cd21f995dc74a1c" },
+    { nonce: 4, sig: "0x03c752ee43889f0c0ebe4892cbfc8da5e9209fa8422dec4a7d98755d32d664c62447d5132af9b1e8c6acf17d1ac7aedc60c092af220f471aab57eab5eb32d6941c" },
+    { nonce: 5, sig: "0x4b24ca0cfd888a4e472bcaae51a8f7512d29a1c686fb6d5eb8382ce38d7416360c5ad2289c2f02e2d9b718d8942b50ba0bd3bc579537a078961262ee807e528e1c" },
+  ],
 };
 
 // Which pre-signed nonce to try next. Nonces are single-use on-chain, so a
@@ -620,7 +680,8 @@ async function runFullCheck() {
     state.protectResult = protectData;
 
     const declinedReason = protectData.reason || "";
-    if (protectData.state === "Declined" && declinedReason.includes("simulation")) {
+    // PositionState enum value, not display text.
+    if (protectData.state === "DECLINED" && declinedReason.includes("simulation")) {
       setFlow(5, "failed", "REVERTED");
       setFlow(6, "skipped", "Skipped");
       setFlow(7, "skipped", "Skipped");
@@ -1087,6 +1148,16 @@ async function runCrew() {
   btn.disabled = true;
   btn.textContent = "Running crew…";
   try {
+    // Auto-register pre-signed mandate if available
+    if (hasSignature(addr)) {
+      const payload = buildParamsPayload(addr);
+      await fetch(`${API_BASE}/positions/${addr}/assessment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }).catch(() => {});
+    }
+
     const result = await agentFetch("/crew/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1158,7 +1229,9 @@ function renderProposalCard(p) {
      </div>`
   ).join("");
 
-  const pending = p.status === "Pending";
+  // Backend enum value, not display text - ProposalStatus serialises as "PENDING".
+  // Comparing against a prettified "Pending" silently hid the approve/reject buttons.
+  const pending = p.status === "PENDING";
   const actions = pending
     ? `<div class="btn-row">
          <button class="btn btn-primary btn-sm" onclick="approveProposal(${p.id})">Approve and execute</button>
